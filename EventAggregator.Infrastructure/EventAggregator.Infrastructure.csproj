@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\EventAggregator.Application\EventAggregator.Application.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Elastic.Clients.Elasticsearch" Version="8.13.8" />
+        <PackageReference Include="Microsoft.AspNetCore.WebUtilities" Version="8.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="11.0.0-preview.1.26104.118" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="11.0.0-preview.1.26104.118" />
+        <PackageReference Include="PuppeteerSharp" Version="21.0.0" />
+    </ItemGroup>
+
+</Project>
