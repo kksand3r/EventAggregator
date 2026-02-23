@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Single-hue base: violet #8b5cf6
+   DM Sans typography — clean, modern, readable
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+    /* Page surface */
+    --background: #f4f1ff;
+    --foreground: #1a1535;
+
+    /* Glass */
+    --card-bg:     rgba(255, 255, 255, 0.58);
+    --card-border: rgba(255, 255, 255, 0.82);
+    --blur:        20px;
+
+    /* Brand */
+    --violet:      #7c4dff;
+    --violet-mid:  rgba(124, 77, 255, 0.28);
+    --violet-soft: rgba(124, 77, 255, 0.10);
+
+    /* Page gradient */
+    --grad-a: #ede8ff;
+    --grad-b: #f4f1ff;
+    --grad-c: #edf2ff;
+
+    /* Category colors */
+    --cat-concerts:  #6d5fd4;
+    --cat-theatres:  #b05888;
+    --cat-standup:   #a87830;
+    --cat-child:     #3a88b8;
+    --cat-clubs:     #a84868;
+    --cat-festivals: #7c4dff;
+    --cat-other:     #2a9e8a;
+
+    /* Typography */
+    --font-sans: 'DM Sans', system-ui, sans-serif;
+    --font-mono: 'DM Mono', monospace;
+}
+
+/* ─── Base ───────────────────────────────────────────────────── */
+body {
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(
+            150deg,
+            var(--grad-a) 0%,
+            var(--grad-b) 55%,
+            var(--grad-c) 100%
+    );
+    background-attachment: fixed;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 19px;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Glass ──────────────────────────────────────────────────── */
+.card-glass {
+    background: var(--card-bg);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--card-border);
+}
+
+.search-glass {
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border: 1px solid rgba(255, 255, 255, 0.90);
+}
+
+/* ─── Category badge ─────────────────────────────────────────── */
+.cat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 0.24rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    opacity: 0.9;
+}
+
+.cat-concerts  { color: var(--cat-concerts);  background: rgba(109, 95, 212, 0.08); }
+.cat-theatres  { color: var(--cat-theatres);  background: rgba(176,  88,136, 0.08); }
+.cat-standup   { color: var(--cat-standup);   background: rgba(168,120, 48, 0.08); }
+.cat-child     { color: var(--cat-child);     background: rgba( 58,136,184, 0.08); }
+.cat-clubs     { color: var(--cat-clubs);     background: rgba(168, 72,104, 0.08); }
+.cat-festivals { color: var(--cat-festivals); background: rgba(124, 77,255, 0.08); }
+.cat-other     { color: var(--cat-other);     background: rgba( 42,158,138, 0.08); }
+
+/* ─── Category top-stripe on cards ──────────────────────────── */
+.cat-stripe-concerts  { background: var(--cat-concerts); }
+.cat-stripe-theatres  { background: var(--cat-theatres); }
+.cat-stripe-standup   { background: var(--cat-standup); }
+.cat-stripe-child     { background: var(--cat-child); }
+.cat-stripe-clubs     { background: var(--cat-clubs); }
+.cat-stripe-festivals { background: var(--cat-festivals); }
+.cat-stripe-other     { background: var(--cat-other); }
+
+/* ─── Chip pill ──────────────────────────────────────────────── */
+.chip {
+    background: rgba(255, 255, 255, 0.60);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.82);
+}
+.chip-active {
+    background: var(--violet-soft);
+    border-color: var(--violet-mid);
+    color: var(--violet);
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: rgba(124, 77, 255, 0.22);
+    border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(124, 77, 255, 0.40);
+}
+
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Animations ─────────────────────────────────────────────── */
+@keyframes cardAppear {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes emptyPulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50%       { opacity: 0.8; transform: scale(1.04); }
+}
+
+@keyframes shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position:  400px 0; }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1;   transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.65); }
+}
+
+.skeleton {
+    background: linear-gradient(
+            90deg,
+            rgba(124, 77, 255, 0.06) 25%,
+            rgba(124, 77, 255, 0.13) 50%,
+            rgba(124, 77, 255, 0.06) 75%
+    );
+    background-size: 800px 100%;
+    animation: shimmer 1.6s infinite linear;
+    border-radius: 0.5rem;
+}
+
+/* ─── Header / nav glass ─────────────────────────────────────── */
+.glass-header {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.82);
+}
+
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+    display: none;
+}
