@@ -7,7 +7,7 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
     ports:
       - "9200:9200"
     volumes:
@@ -22,17 +22,6 @@ services:
       - "8080:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - Elasticsearch__Url=http://elasticsearch:9200
-      - Gemini__ApiKey=${GEMINI_API_KEY:-""}
-    depends_on:
-      - elasticsearch
-
-  collector:
-    build:
-      context: .
-      dockerfile: EventAggregator.Collector/Dockerfile
-    container_name: event_aggregator_collector
-    environment:
       - Elasticsearch__Url=http://elasticsearch:9200
       - Gemini__ApiKey=${GEMINI_API_KEY:-""}
     depends_on:
