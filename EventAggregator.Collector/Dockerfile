@@ -12,7 +12,7 @@ COPY . .
 WORKDIR "/src/EventAggregator.Collector"
 RUN dotnet publish "EventAggregator.Collector.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 ENTRYPOINT ["dotnet", "EventAggregator.Collector.dll"]
