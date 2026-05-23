@@ -46,7 +46,7 @@ public class KarabasScraper : IEventScraper
 
             foreach (var category in _categories)
             {
-                string targetUrl = $"https://{city}.karabas.com/ua/{category}/";
+                string targetUrl = $"https://{city}.karabas.com/uk/{category}/";
                 try
                 {
                     await mainPage.GoToAsync(targetUrl, new NavigationOptions
