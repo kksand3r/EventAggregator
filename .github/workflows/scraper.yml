@@ -17,7 +17,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ELASTICSEARCH_URL: ${{ secrets.ELASTIC_URL }}
         run: |
-          docker build -t aggregator-scraper -f EventAggregator.Collector/Dockerfile .
+          docker build --no-cache -t aggregator-scraper -f EventAggregator.Collector/Dockerfile .
           docker run --rm \
             -e Gemini__ApiKey=$GEMINI_API_KEY \
             -e Elasticsearch__Url=$ELASTICSEARCH_URL \
