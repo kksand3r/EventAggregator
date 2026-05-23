@@ -14,7 +14,7 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
+        source: '/backend/:path*',
         destination: 'http://147.182.190.196:8080/api/:path*',
       },
     ];
