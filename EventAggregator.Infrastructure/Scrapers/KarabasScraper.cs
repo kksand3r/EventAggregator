@@ -56,7 +56,7 @@ public class KarabasScraper : IEventScraper
                     await AutoScrollAsync(mainPage);
 
                     var data = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {\
-                        return Array.from(document.querySelectorAll('.result-event.disp_row'))
+                        return Array.from(document.querySelectorAll('.result-event disp_row'))
                             .map(ev => ({
                                 title: ev.querySelector('.event-title, .title-row a')?.innerText?.trim() || '',
                                 url: ev.querySelector('a.main-url, .title-row a')?.href || ''
