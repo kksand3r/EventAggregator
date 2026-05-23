@@ -27,6 +27,7 @@ jobs:
             host: ${{ secrets.SERVER_IP }}
             username: ${{ secrets.SERVER_USER }}
             key: ${{ secrets.SSH_PRIVATE_KEY }}
+            timeout: 10m
             script: |
               cd /home/${{ secrets.SERVER_USER }}/event-aggregator
               export GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
