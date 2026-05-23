@@ -32,16 +32,30 @@ try
 
     using var host = builder.Build();
 
-
     Log.Information("🌐 Підготовка браузера...");
+
+    if (!System.IO.File.Exists("/usr/bin/chromium"))
+    {
+        Log.Fatal("❌ Файл браузера НЕ знайдено за шляхом /usr/bin/chromium. Можливо, пакет називається інакше.");
+        return; 
+    }
+
+    Log.Information("✅ Файл /usr/bin/chromium знайдено. Пробуємо запустити...");
 
     var scrapingService = host.Services.GetRequiredService<ScrapingService>();
     
     using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions 
            { 
                Headless = true,
-               ExecutablePath = "/usr/bin/chromium",  // ← вкажи шлях явно
-               Args = new[] { "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage" }
+               ExecutablePath = "/usr/bin/chromium",
+               Args = new[] 
+               { 
+                   "--no-sandbox", 
+                   "--disable-setuid-sandbox", 
+                   "--disable-dev-shm-usage",
+                   "--disable-gpu", 
+                   "--disable-software-rasterizer"
+               }
            }))
     {
         Log.Information("🚀 Початок сесії скрайпінгу...");
