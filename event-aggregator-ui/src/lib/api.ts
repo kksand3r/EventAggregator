@@ -46,9 +46,9 @@ export interface MetadataResponse {
 
 function getBaseUrl(): string {
     if (typeof window !== "undefined") {
-        return process.env.NEXT_PUBLIC_API_URL ?? "";
+        return "";
     }
-    return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5103";
+    return process.env.NEXT_PUBLIC_API_URL ?? "http://147.182.190.196:8080";
 }
 
 function utf8ToBase64(str: string): string {
