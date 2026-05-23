@@ -101,7 +101,7 @@ public class KarabasScraper : IEventScraper
                     }
 
                     // Додаткова затримка перед переходом до наступної категорії, щоб не спамити запитами
-                    await Task.Delay(Random.Shared.Next(2000, 4000));
+                    await Task.Delay(Random.Shared.Next(3000, 6000));
                 }
                 catch (Exception ex)
                 {
