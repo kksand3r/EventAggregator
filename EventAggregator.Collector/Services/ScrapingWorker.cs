@@ -46,7 +46,7 @@ public class ScrapingWorker : BackgroundService
             using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions 
                    { 
                        Headless = true,
-                       Args = new[] { "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage" }
+                       Args = new[] { "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled", "--window-size=1920,1080" }
                    }))
             {
                 await _scrapingService.ProcessAllSourcesAsync(browser, stoppingToken);
