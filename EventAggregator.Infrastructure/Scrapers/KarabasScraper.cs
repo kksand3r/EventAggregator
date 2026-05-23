@@ -55,15 +55,19 @@ public class KarabasScraper : IEventScraper
                         Timeout = 60000
                     });
 
-                    // Клікаємо кнопку "показати ще" кілька разів
+                    // Клікаємо кнопку "показати ще" кілька разів через JS
                     for (int i = 0; i < 5; i++)
                     {
                         try
                         {
                             var btn = await mainPage.QuerySelectorAsync(".show-more.red-hover");
                             if (btn == null) break;
-                            await btn.ClickAsync();
-                            await Task.Delay(3000);
+                            
+                            // Використовуємо JS-клік, щоб уникнути помилок перекриття елементами (наприклад, Cookie-банером)
+                            await mainPage.EvaluateFunctionAsync("(btn) => btn.click()", btn);
+                            
+                            // Рандомізована затримка для імітації людини
+                            await Task.Delay(Random.Shared.Next(2500, 3500));
                         }
                         catch { break; }
                     }
@@ -78,13 +82,26 @@ public class KarabasScraper : IEventScraper
                             })).filter(e => e.title && e.url);
                     }");
 
-                    foreach (var d in data)
+                    // Перевірка, чи не заблокував нас Cloudflare
+                    if (data.GetArrayLength() == 0)
+                    {
+                        var title = await mainPage.GetTitleAsync();
+                        if (title.Contains("Just a moment") || title.Contains("Cloudflare"))
+                        {
+                            _logger.LogWarning("⚠️ Увага: Спрацював антибот захист (Cloudflare) на {Url}", targetUrl);
+                        }
+                    }
+
+                    foreach (var d in data.EnumerateArray())
                     {
                         var url = d.GetProperty("url").GetString() ?? "";
                         if (!linksToScrape.Any(x => x.Url == url))
                             linksToScrape.Add((d.GetProperty("title").GetString() ?? "Без назви", url, city.ToUpper(),
                                 category));
                     }
+
+                    // Додаткова затримка перед переходом до наступної категорії, щоб не спамити запитами
+                    await Task.Delay(Random.Shared.Next(2000, 4000));
                 }
                 catch (Exception ex)
                 {
@@ -184,7 +201,7 @@ public class KarabasScraper : IEventScraper
 
                 _logger.LogInformation("✅ Karabas: {Title}", newEvent.Title);
 
-                await Task.Delay(Random.Shared.Next(500, 1000));
+                await Task.Delay(Random.Shared.Next(1000, 2000));
             }
             catch (Exception ex)
             {
