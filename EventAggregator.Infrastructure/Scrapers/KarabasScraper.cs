@@ -16,10 +16,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "kyiv", "odesa"/* "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
         "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"*/
     };
 
     private readonly string[] _categories =
@@ -46,7 +46,7 @@ public class KarabasScraper : IEventScraper
 
             foreach (var category in _categories)
             {
-                string targetUrl = $"https://{city}.karabas.com/uk/{category}/";
+                string targetUrl = $"https://{city}.karabas.com/ua/{category}/";
                 try
                 {
                     await mainPage.GoToAsync(targetUrl, new NavigationOptions
