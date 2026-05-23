@@ -36,7 +36,6 @@ public class ScrapingWorker : BackgroundService
             _logger.LogCritical(ex, "❌ Не вдалося підготувати браузер.");
             throw;
         }
-
         await base.StartAsync(cancellationToken);
     }
 
@@ -54,31 +53,23 @@ public class ScrapingWorker : BackgroundService
                     "--no-sandbox", 
                     "--disable-setuid-sandbox", 
                     "--disable-dev-shm-usage", 
-                    "--disable-blink-features=AutomationControlled",
+                    "--disable-blink-features=AutomationControlled", 
                     "--window-size=1920,1080",
-                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
                 }
             }))
             {
-                // Запускаємо процес збору даних з усіх джерел (Karabas, Concert.ua тощо)
                 await _scrapingService.ProcessAllSourcesAsync(browser, stoppingToken);
-                
                 await browser.CloseAsync();
             }
-
             _logger.LogInformation("✅ Скрайпінг успішно завершено.");
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("⚠️ Операція була скасована.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Критична помилка під час виконання Cron-завдання.");
+            _logger.LogError(ex, "❌ Критична помилка.");
         }
         finally
         {
-            // Важливо: зупиняємо застосунок після завершення скрапінгу (для коректної роботи Cron/Docker)
             _hostApplicationLifetime.StopApplication();
         }
     }

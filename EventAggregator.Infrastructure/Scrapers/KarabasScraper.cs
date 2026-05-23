@@ -11,7 +11,6 @@ public class KarabasScraper : IEventScraper
 {
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
-    
     private readonly SemaphoreSlim _semaphore = new(4); 
 
     private readonly string[] _citySlugs = 
@@ -34,7 +33,7 @@ public class KarabasScraper : IEventScraper
         using var mainPage = await browser.NewPageAsync();
         mainPage.DefaultNavigationTimeout = 60000; 
         await mainPage.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
-        await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
 
         var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
 
@@ -44,13 +43,13 @@ public class KarabasScraper : IEventScraper
 
             foreach (var category in _categories)
             {
-                string targetUrl = $"https://{city}.karabas.com/uk/{category}/";
+                string targetUrl = $"https://{city}.karabas.com/ua/{category}/";
                 try
                 {
                     await mainPage.GoToAsync(targetUrl, new NavigationOptions 
                     { 
-                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 }, 
-                        Timeout = 60000 
+                        WaitUntil = new[] { WaitUntilNavigation.DOMContentLoaded }, 
+                        Timeout = 45000 
                     });
                     
                     await AutoScrollAsync(mainPage);
@@ -63,11 +62,15 @@ public class KarabasScraper : IEventScraper
                             })).filter(e => e.title && e.url);
                     }");
 
-                    foreach (var d in data)
+                    if (data != null)
                     {
-                        var url = d.GetProperty("url").GetString() ?? "";
-                        if (!linksToScrape.Any(x => x.Url == url))
-                            linksToScrape.Add((d.GetProperty("title").GetString() ?? "Без назви", url, city.ToUpper(), category));
+                        foreach (var d in data)
+                        {
+                            var url = d.GetProperty("url").GetString() ?? "";
+                            var title = d.GetProperty("title").GetString() ?? "Без назви";
+                            if (!linksToScrape.Any(x => x.Url == url))
+                                linksToScrape.Add((title, url, city.ToUpper(), category));
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -96,75 +99,35 @@ public class KarabasScraper : IEventScraper
                 });
 
                 var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
-                    const clean = (str) => {
-                        if (!str) return '';
-                        if (str.includes('Опис на сайті') || str.includes('Опис відсутній')) return '';
-                        return str.replace(/ПОКАЗАТИ ЩЕ/g, '').replace(/\s+/g, ' ').trim();
-                    };
-
-                    const dateSelectors = [
-                        '.date-time-location .date-time span', 
-                        '.date-time span',                     
-                        '.event-date', 
-                        '.ev-date', 
-                        '.data-time'
-                    ];
-
-                    let rawDate = '';
-                    for (let selector of dateSelectors) {
-                        const el = document.querySelector(selector);
-                        if (el && el.innerText.trim()) {
-                            rawDate = el.innerText;
-                            break; 
-                        }
-                    }
-
-                    if (!rawDate) {
-                        const container = document.querySelector('.date-time-location, .date-time');
-                        if (container) {
-                            rawDate = container.innerText.replace(/^.*?,/, '');
-                        }
-                    }
-
-                    const posterContainer = document.querySelector('.event-poster');
-                    let imgUrl = '';
-                    if (posterContainer) {
-                        const source = posterContainer.querySelector('source');
-                        const img = posterContainer.querySelector('img');
-                        
-                        if (source && source.srcset) {
-                            imgUrl = source.srcset.split(',')[0].trim().split(' ')[0];
-                        } else if (img) {
-                            imgUrl = img.src;
-                        }
-                    }
-
+                    const clean = (str) => (!str ? '' : str.replace(/ПОКАЗАТИ ЩЕ/g, '').replace(/\s+/g, ' ').trim());
+                    const getTxt = (sel) => document.querySelector(sel)?.innerText || '';
+                    
                     return {
-                        Description: clean(document.querySelector('.event-description, .about-event__text, #event-description')?.innerText),
-                        Date: clean(rawDate),
-                        ImageUrl: imgUrl
+                        Description: clean(getTxt('.event-description, .about-event__text, #event-description')),
+                        Date: clean(getTxt('.date-time-location, .date-time, .event-date')),
+                        ImageUrl: document.querySelector('.event-poster img')?.src || ''
                     };
                 }");
 
-                string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
+                var rawDate = details.TryGetProperty("Date", out var dateEl) ? dateEl.GetString() : "";
                 
                 var newEvent = new ScrapedEvent
                 {
                     Title = item.Title,
                     Url = item.Url,
                     Source = ProviderName,
-                    Description = details.GetProperty("Description").GetString() ?? "",
-                    Date = details.GetProperty("Date").GetString() ?? "",
-                    ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
+                    Description = details.TryGetProperty("Description", out var descEl) ? descEl.GetString() : "",
+                    Date = rawDate ?? "",
+                    ParsedDate = DateParser.ParseUkrainianDate(rawDate ?? ""), 
                     City = item.City.ToUpper(),
                     Category = item.Category,
-                    ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
+                    ImageUrl = details.TryGetProperty("ImageUrl", out var imgEl) ? imgEl.GetString() : "" 
                 };
 
                 lock (allEvents) { allEvents.Add(newEvent); }
                 _logger.LogInformation("✅ Karabas: {Title}", newEvent.Title);
                 
-                await Task.Delay(Random.Shared.Next(500, 1000));
+                await Task.Delay(Random.Shared.Next(800, 1500));
             }
             catch (Exception ex)
             {
@@ -179,17 +142,6 @@ public class KarabasScraper : IEventScraper
 
     private static async Task AutoScrollAsync(IPage page)
     {
-        try 
-        {
-            await page.EvaluateFunctionAsync(@"async () => {
-                let times = 0;
-                const maxTimes = 3;
-                while (times < maxTimes) {
-                    window.scrollTo(0, document.body.scrollHeight);
-                    await new Promise(r => setTimeout(r, 1500));
-                    times++;
-                }
-            }");
-        } catch { }
+        try { await page.EvaluateFunctionAsync(@"async () => { window.scrollTo(0, document.body.scrollHeight); await new Promise(r => setTimeout(r, 1000)); }"); } catch { }
     }
 }
