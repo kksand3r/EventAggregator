@@ -46,7 +46,7 @@ export interface MetadataResponse {
 
 function getBaseUrl(): string {
     if (typeof window !== "undefined") {
-        return "";
+        return ""; 
     }
     return process.env.NEXT_PUBLIC_API_URL ?? "http://147.182.190.196:8080";
 }
