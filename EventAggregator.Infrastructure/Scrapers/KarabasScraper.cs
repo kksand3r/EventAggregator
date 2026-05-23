@@ -83,7 +83,8 @@ public class KarabasScraper : IEventScraper
                     }");
 
                     // Перевірка, чи не заблокував нас Cloudflare
-                    if (data.GetArrayLength() == 0)
+// Перевірка, чи не заблокував нас Cloudflare
+                    if (data.Length == 0)
                     {
                         var title = await mainPage.GetTitleAsync();
                         if (title.Contains("Just a moment") || title.Contains("Cloudflare"))
@@ -91,8 +92,7 @@ public class KarabasScraper : IEventScraper
                             _logger.LogWarning("⚠️ Увага: Спрацював антибот захист (Cloudflare) на {Url}", targetUrl);
                         }
                     }
-
-                    foreach (var d in data.EnumerateArray())
+                    foreach (var d in data)
                     {
                         var url = d.GetProperty("url").GetString() ?? "";
                         if (!linksToScrape.Any(x => x.Url == url))
