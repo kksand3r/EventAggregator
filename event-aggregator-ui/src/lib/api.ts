@@ -48,7 +48,7 @@ function getBaseUrl(): string {
     if (typeof window !== "undefined") {
         return ""; 
     }
-    return process.env.NEXT_PUBLIC_API_URL ?? "http://147.182.190.196:8080";
+    return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5103";
 }
 
 function utf8ToBase64(str: string): string {
