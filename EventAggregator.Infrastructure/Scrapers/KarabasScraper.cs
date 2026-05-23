@@ -44,12 +44,14 @@ public class KarabasScraper : IEventScraper
 
             foreach (var category in _categories)
             {
-                string targetUrl = $"https://{city}.karabas.com/uk/{category}/";
+                // ВИПРАВЛЕНО 1: Використовуємо /ua/ замість /uk/
+                string targetUrl = $"https://{city}.karabas.com/ua/{category}/";
                 try
                 {
                     await mainPage.GoToAsync(targetUrl, new NavigationOptions 
                     { 
-                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 }, 
+                        // ВИПРАВЛЕНО 2: Чекаємо лише завантаження HTML, щоб уникнути таймаутів
+                        WaitUntil = new[] { WaitUntilNavigation.DOMContentLoaded }, 
                         Timeout = 60000 
                     });
                     
@@ -63,7 +65,7 @@ public class KarabasScraper : IEventScraper
                             })).filter(e => e.title && e.url);
                     }");
 
-                    foreach (var d in data)
+                    foreach (var d in data.EnumerateArray())
                     {
                         var url = d.GetProperty("url").GetString() ?? "";
                         if (!linksToScrape.Any(x => x.Url == url))

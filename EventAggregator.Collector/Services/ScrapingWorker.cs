@@ -1,4 +1,7 @@
-﻿using Microsoft.Extensions.Hosting;
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 using EventAggregator.Application.Services;
@@ -44,26 +47,26 @@ public class ScrapingWorker : BackgroundService
         try
         {
             using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions 
-                   { 
-                       Headless = true,
-                       Args = new[] 
-                       { 
-                           "--no-sandbox",
-                           "--disable-setuid-sandbox",
-                           "--disable-dev-shm-usage",
-                           "--disable-blink-features=AutomationControlled",
-                           "--window-size=1920,1080",
-                           "--disable-web-security",
-                           "--disable-features=IsolateOrigins,site-per-process",
-                           "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                       }
-                   }))
+            { 
+                Headless = true,
+                Args = new[] 
+                { 
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage", 
+                    "--disable-blink-features=AutomationControlled",
+                    "--window-size=1920,1080",
+                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                }
+            }))
             {
+                // Запускаємо процес збору даних з усіх джерел (Karabas, Concert.ua тощо)
                 await _scrapingService.ProcessAllSourcesAsync(browser, stoppingToken);
+                
                 await browser.CloseAsync();
             }
 
-            _logger.LogInformation("✅ Скрайпінг успішно завершено. Завершення процесу...");
+            _logger.LogInformation("✅ Скрайпінг успішно завершено.");
         }
         catch (OperationCanceledException)
         {
@@ -75,6 +78,7 @@ public class ScrapingWorker : BackgroundService
         }
         finally
         {
+            // Важливо: зупиняємо застосунок після завершення скрапінгу (для коректної роботи Cron/Docker)
             _hostApplicationLifetime.StopApplication();
         }
     }
