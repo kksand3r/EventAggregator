@@ -55,9 +55,21 @@ public class KarabasScraper : IEventScraper
                         Timeout = 60000
                     });
 
-                    await AutoScrollAsync(mainPage);
-                    await Task.Delay(2000);
-                    
+                    // Клікаємо кнопку "показати ще" кілька разів
+                    for (int i = 0; i < 5; i++)
+                    {
+                        try
+                        {
+                            var btn = await mainPage.QuerySelectorAsync(".show-more.red-hover");
+                            if (btn == null) break;
+                            await btn.ClickAsync();
+                            await Task.Delay(3000);
+                        }
+                        catch { break; }
+                    }
+
+                    await Task.Delay(1000);
+
                     var data = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
                         return Array.from(document.querySelectorAll('.result-event.disp_row'))
                             .map(ev => ({
@@ -186,22 +198,5 @@ public class KarabasScraper : IEventScraper
 
         await Task.WhenAll(tasks);
         return allEvents;
-    }
-
-    private static async Task AutoScrollAsync(IPage page)
-    {
-        try
-        {
-            await page.EvaluateFunctionAsync(@"async () => {
-                for (let i = 0; i < 10; i++) {
-                    const btn = document.querySelector('.show-more.red-hover');
-                    if (!btn) break;
-                    btn.click();
-                    await new Promise(r => setTimeout(r, 3000));
-                }
-                window.scrollTo(0, document.body.scrollHeight);
-            }");
-        }
-        catch { }
     }
 }
