@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using System.Text;
-using PuppeteerSharp; // Додаємо для BrowserFetcher
+using PuppeteerSharp; 
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -25,7 +25,6 @@ try
     builder.Logging.ClearProviders();
     builder.Logging.AddSerilog();
     
-    // Реєстрація інфраструктури
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddTransient<ScrapingService>();
     builder.Services.AddTransient<IEventScraper, KarabasScraper>();
@@ -33,16 +32,15 @@ try
 
     using var host = builder.Build();
 
-    // 1. Підготовка браузера (з твого ScrapingWorker)
-    Log.Information("🌐 Підготовка браузера...");
-    await new BrowserFetcher().DownloadAsync();
 
-    // 2. Виконання скрайпінгу (логіка з твого ScrapingWorker)
+    Log.Information("🌐 Підготовка браузера...");
+
     var scrapingService = host.Services.GetRequiredService<ScrapingService>();
     
     using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions 
            { 
                Headless = true,
+               ExecutablePath = "/usr/bin/chromium",  // ← вкажи шлях явно
                Args = new[] { "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage" }
            }))
     {
