@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using System.Text;
 using PuppeteerSharp; 
+using System.Runtime.InteropServices; 
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -34,29 +35,41 @@ try
 
     Log.Information("🌐 Підготовка браузера...");
 
-    if (!System.IO.File.Exists("/usr/bin/chromium"))
+    var launchOptions = new LaunchOptions 
+    { 
+        Headless = true,
+        Args = new[] 
+        { 
+            "--no-sandbox", 
+            "--disable-setuid-sandbox", 
+            "--disable-dev-shm-usage",
+            "--disable-gpu", 
+            "--disable-software-rasterizer"
+        }
+    };
+    
+    if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
     {
-        Log.Fatal("❌ Файл браузера НЕ знайдено за шляхом /usr/bin/chromium. Можливо, пакет називається інакше.");
-        return; 
+        Log.Information("🐧 Виявлено Linux (Сервер). Перевіряємо системний Chromium...");
+        
+        if (!System.IO.File.Exists("/usr/bin/chromium"))
+        {
+            Log.Fatal("❌ Файл браузера НЕ знайдено за шляхом /usr/bin/chromium.");
+            return; 
+        }
+        
+        launchOptions.ExecutablePath = "/usr/bin/chromium";
     }
-
-    Log.Information("✅ Файл /usr/bin/chromium знайдено. Пробуємо запустити...");
+    else
+    {
+        Log.Information("💻 Виявлено Windows/Mac. Завантажуємо локальний Chromium для розробки...");
+        var browserFetcher = new BrowserFetcher();
+        await browserFetcher.DownloadAsync();
+    }
 
     var scrapingService = host.Services.GetRequiredService<ScrapingService>();
     
-    using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions 
-           { 
-               Headless = true,
-               ExecutablePath = "/usr/bin/chromium",
-               Args = new[] 
-               { 
-                   "--no-sandbox", 
-                   "--disable-setuid-sandbox", 
-                   "--disable-dev-shm-usage",
-                   "--disable-gpu", 
-                   "--disable-software-rasterizer"
-               }
-           }))
+    using (var browser = await Puppeteer.LaunchAsync(launchOptions))
     {
         Log.Information("🚀 Початок сесії скрайпінгу...");
         await scrapingService.ProcessAllSourcesAsync(browser, CancellationToken.None);
