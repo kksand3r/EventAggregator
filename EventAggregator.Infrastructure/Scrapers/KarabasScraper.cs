@@ -56,7 +56,8 @@ public class KarabasScraper : IEventScraper
                     });
 
                     await AutoScrollAsync(mainPage);
-
+                    await Task.Delay(2000);
+                    
                     var data = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
                         return Array.from(document.querySelectorAll('.result-event.disp_row'))
                             .map(ev => ({
@@ -189,17 +190,18 @@ public class KarabasScraper : IEventScraper
 
     private static async Task AutoScrollAsync(IPage page)
     {
-        try 
+        try
         {
             await page.EvaluateFunctionAsync(@"async () => {
-            for (let i = 0; i < 10; i++) {
-                const btn = document.querySelector('.show-more.red-hover');
-                if (!btn) break;
-                btn.click();
-                await new Promise(r => setTimeout(r, 2000));
-            }
-            window.scrollTo(0, document.body.scrollHeight);
-        }");
-        } catch { }
+                for (let i = 0; i < 10; i++) {
+                    const btn = document.querySelector('.show-more.red-hover');
+                    if (!btn) break;
+                    btn.click();
+                    await new Promise(r => setTimeout(r, 3000));
+                }
+                window.scrollTo(0, document.body.scrollHeight);
+            }");
+        }
+        catch { }
     }
 }
