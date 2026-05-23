@@ -189,20 +189,17 @@ public class KarabasScraper : IEventScraper
 
     private static async Task AutoScrollAsync(IPage page)
     {
-        try
+        try 
         {
             await page.EvaluateFunctionAsync(@"async () => {
-                let times = 0;
-                const maxTimes = 3;
-                while (times < maxTimes) {
-                    window.scrollTo(0, document.body.scrollHeight);
-                    await new Promise(r => setTimeout(r, 1500));
-                    times++;
-                }
-            }");
-        }
-        catch
-        {
-        }
+            for (let i = 0; i < 10; i++) {
+                const btn = document.querySelector('.show-more.red-hover');
+                if (!btn) break;
+                btn.click();
+                await new Promise(r => setTimeout(r, 2000));
+            }
+            window.scrollTo(0, document.body.scrollHeight);
+        }");
+        } catch { }
     }
 }
