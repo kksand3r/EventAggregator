@@ -16,10 +16,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv" // "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private readonly string[] _categories =
@@ -60,8 +60,8 @@ public class KarabasScraper : IEventScraper
                     var data = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
                         return Array.from(document.querySelectorAll('.result-event.disp_row'))
                             .map(ev => ({
-                                title: ev.querySelector('a')?.innerText?.trim() || '',
-                                url: ev.querySelector('a')?.href || ''
+                                title: ev.querySelector('.inf.disp_col .title-row a')?.innerText?.trim() || '',
+                                url: ev.querySelector('.inf.disp_col .title-row a')?.href || ''
                             })).filter(e => e.title && e.url);
                     }");
 
