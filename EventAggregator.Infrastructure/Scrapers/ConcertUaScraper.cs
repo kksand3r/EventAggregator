@@ -15,10 +15,10 @@ public class ConcertUaScraper : IEventScraper
 
     private readonly string[] _citySlugs = 
     {
-        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "rivne" /*"kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
         "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"*/
     };
     
     public ConcertUaScraper(ILogger<ConcertUaScraper> logger)
