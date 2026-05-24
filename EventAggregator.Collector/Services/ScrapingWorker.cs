@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -43,9 +44,12 @@ public class ScrapingWorker : BackgroundService
     {
         _logger.LogInformation("🚀 Початок сесії скрайпінгу: {time}", DateTimeOffset.Now);
 
+        // Отримуємо проксі з оточення (PROXY_SERVER у .env)
+        string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
+
         try
         {
-            using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions 
+            var launchOptions = new LaunchOptions 
             { 
                 Headless = true,
                 Args = new[] 
@@ -53,11 +57,15 @@ public class ScrapingWorker : BackgroundService
                     "--no-sandbox", 
                     "--disable-setuid-sandbox", 
                     "--disable-dev-shm-usage", 
-                    "--disable-blink-features=AutomationControlled", 
+                    "--disable-blink-features=AutomationControlled",
+                    // Додаємо проксі, якщо він заданий
+                    !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : "",
                     "--window-size=1920,1080",
                     "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-                }
-            }))
+                }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray() // Фільтруємо пусті рядки
+            };
+
+            using (var browser = await Puppeteer.LaunchAsync(launchOptions))
             {
                 await _scrapingService.ProcessAllSourcesAsync(browser, stoppingToken);
                 await browser.CloseAsync();
@@ -66,11 +74,12 @@ public class ScrapingWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Критична помилка.");
+            _logger.LogError(ex, "❌ Критична помилка під час виконання скрайпінгу.");
         }
         finally
         {
             _hostApplicationLifetime.StopApplication();
+            Environment.Exit(0); // Гарантоване завершення процесу
         }
     }
 }
