@@ -12,8 +12,7 @@ public class KarabasScraper : IEventScraper
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
     
-    // Залишаємо 2 потоки, оскільки ми вантажимо картинки. 4 потоки з графікою перевантажать 1 vCPU.
-    private readonly SemaphoreSlim _semaphore = new(2); 
+    private readonly SemaphoreSlim _semaphore = new(4); 
 
     private readonly string[] _citySlugs = 
     {
@@ -32,6 +31,11 @@ public class KarabasScraper : IEventScraper
         var allEvents = new List<ScrapedEvent>();
         if (browser.IsClosed) return allEvents;
 
+        using var mainPage = await browser.NewPageAsync();
+        mainPage.DefaultNavigationTimeout = 60000; 
+        await mainPage.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
+        await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+
         var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
 
         foreach (var city in _citySlugs)
@@ -40,19 +44,9 @@ public class KarabasScraper : IEventScraper
 
             foreach (var category in _categories)
             {
-                if (browser.IsClosed) break;
-
                 string targetUrl = $"https://{city}.karabas.com/uk/{category}/";
-                IPage mainPage = null;
-
                 try
                 {
-                    // Ізолюємо вкладки, щоб уникнути "Target closed" для наступних міст
-                    mainPage = await browser.NewPageAsync();
-                    mainPage.DefaultNavigationTimeout = 60000;
-                    await mainPage.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
-                    await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
-
                     await mainPage.GoToAsync(targetUrl, new NavigationOptions 
                     { 
                         WaitUntil = new[] { WaitUntilNavigation.Networkidle2 }, 
@@ -80,11 +74,6 @@ public class KarabasScraper : IEventScraper
                 {
                     _logger.LogWarning("⚠️ Пропущено список {Url}: {Msg}", targetUrl, ex.Message);
                 }
-                finally
-                {
-                    // Обов'язково закриваємо вкладку, щоб звільнити пам'ять
-                    if (mainPage != null && !mainPage.IsClosed) await mainPage.CloseAsync();
-                }
             }
         }
 
@@ -93,12 +82,11 @@ public class KarabasScraper : IEventScraper
         var tasks = linksToScrape.Select(async item =>
         {
             await _semaphore.WaitAsync();
-            IPage page = null;
             try
             {
                 if (browser.IsClosed) return;
 
-                page = await browser.NewPageAsync();
+                using var page = await browser.NewPageAsync();
                 page.DefaultNavigationTimeout = 60000;
 
                 await page.GoToAsync(item.Url, new NavigationOptions 
@@ -182,11 +170,7 @@ public class KarabasScraper : IEventScraper
             {
                 _logger.LogWarning("⚠️ Помилка завантаження {Url}: {Msg}", item.Url, ex.Message);
             }
-            finally 
-            { 
-                if (page != null && !page.IsClosed) await page.CloseAsync();
-                _semaphore.Release(); 
-            }
+            finally { _semaphore.Release(); }
         });
 
         await Task.WhenAll(tasks);
