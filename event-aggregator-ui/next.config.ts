@@ -15,7 +15,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://165.22.77.207:8080/api/:path*',
+        destination: 'http://167.71.34.47:8080/api/:path*',
       },
     ];
   },
