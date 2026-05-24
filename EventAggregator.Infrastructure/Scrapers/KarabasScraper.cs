@@ -61,22 +61,17 @@ public class KarabasScraper : IEventScraper
                         return Array.from(document.querySelectorAll('a[href*=""karabas.com""]'))
                             .filter(a => {
                                 const url = a.href;
-                                const path = new URL(url).pathname;
-                                const segments = path.split('/').filter(s => s.length > 0);
-                                
                                 return url.includes('.karabas.com/') && 
-                                       !url.includes('/hall/') &&
-                                       !url.includes('/concerts') &&
-                                       !url.includes('/theatres') &&
-                                       !url.includes('/stand-up') &&
-                                       !url.includes('/child') &&
-                                       !url.includes('/clubs') &&
-                                       !url.includes('/festivals') &&
-                                       !url.includes('/inshe') &&
-                                       !url.includes('/order') &&
-                                       segments.length >= 2 &&
-                                       segments[segments.length - 1].includes('-') &&
-                                       a.innerText.trim().length > 3
+                                       !url.endsWith('/uk/') &&
+                                       !url.includes('/hall/') && 
+                                       !url.includes('/order/') &&
+                                       !url.includes('/concerts/') &&
+                                       !url.includes('/theatres/') &&
+                                       !url.includes('/stand-up/') &&
+                                       !url.includes('/child/') &&
+                                       !url.includes('/clubs/') &&
+                                       !url.includes('/festivals/') &&
+                                       a.innerText.trim().length > 0
                             })
                             .map(ev => ({
                                 title: ev.innerText.trim(),
