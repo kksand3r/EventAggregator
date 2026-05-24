@@ -1,6 +1,4 @@
-﻿version: '3.8'
-
-services:
+﻿services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
     container_name: event_aggregator_elasticsearch
@@ -37,6 +35,8 @@ services:
       context: .
       dockerfile: EventAggregator.Collector/Dockerfile
     container_name: event_aggregator_collector
+    env_file:
+      - .env
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
       - Gemini__ApiKey=${GEMINI_API_KEY:-""}
