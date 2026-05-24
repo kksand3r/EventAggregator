@@ -11,19 +11,18 @@ public class KarabasScraper : IEventScraper
 {
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
+    
+    private readonly SemaphoreSlim _semaphore = new(4); 
 
-    private readonly SemaphoreSlim _semaphore = new(4);
-
-    private readonly string[] _citySlugs =
+    private readonly string[] _citySlugs = 
     {
-        "kyiv", "odesa" //"dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "kyiv", "odesa"// "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
         //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
         //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
-
-    private readonly string[] _categories =
-        { "concerts", "theatres", "stand-up", "child", "clubs", "inshe", "festivals" };
+    
+    private readonly string[] _categories = { "concerts", "theatres", "stand-up", "child", "clubs", "inshe", "festivals" };
 
     public KarabasScraper(ILogger<KarabasScraper> logger) => _logger = logger;
 
@@ -33,10 +32,9 @@ public class KarabasScraper : IEventScraper
         if (browser.IsClosed) return allEvents;
 
         using var mainPage = await browser.NewPageAsync();
-        mainPage.DefaultNavigationTimeout = 60000;
+        mainPage.DefaultNavigationTimeout = 60000; 
         await mainPage.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
-        await mainPage.SetUserAgentAsync(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
         var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
 
@@ -49,43 +47,28 @@ public class KarabasScraper : IEventScraper
                 string targetUrl = $"https://{city}.karabas.com/uk/{category}/";
                 try
                 {
-                    await mainPage.GoToAsync(targetUrl, new NavigationOptions
-                    {
-                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 },
-                        Timeout = 60000
+                    await mainPage.GoToAsync(targetUrl, new NavigationOptions 
+                    { 
+                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 }, 
+                        Timeout = 60000 
                     });
-
+                    
                     await AutoScrollAsync(mainPage);
 
                     var data = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
-                        return Array.from(document.querySelectorAll('a[href*=""karabas.com""]'))
-                            .filter(a => {
-                                const url = a.href;
-                                return url.includes('.karabas.com/') && 
-                                       !url.endsWith('/uk/') &&
-                                       !url.includes('/hall/') && 
-                                       !url.includes('/order/') &&
-                                       !url.includes('/concerts/') &&
-                                       !url.includes('/theatres/') &&
-                                       !url.includes('/stand-up/') &&
-                                       !url.includes('/child/') &&
-                                       !url.includes('/clubs/') &&
-                                       !url.includes('/festivals/') &&
-                                       a.innerText.trim().length > 0
-                            })
+                        return Array.from(document.querySelectorAll('div.result-event'))
                             .map(ev => ({
-                                title: ev.innerText.trim(),
-                                url: ev.href
+                                title: ev.querySelector('.title-row a')?.innerText?.trim() || '',
+                                url: ev.querySelector('.ev-m-info a')?.href || ''
                             }))
-                            .filter((e, i, arr) => arr.findIndex(x => x.url === e.url) === i);
+                            .filter(e => e.title && e.url && e.url.includes('.karabas.com/'));
                     }");
 
                     foreach (var d in data)
                     {
                         var url = d.GetProperty("url").GetString() ?? "";
                         if (!linksToScrape.Any(x => x.Url == url))
-                            linksToScrape.Add((d.GetProperty("title").GetString() ?? "Без назви", url, city.ToUpper(),
-                                category));
+                            linksToScrape.Add((d.GetProperty("title").GetString() ?? "Без назви", url, city.ToUpper(), category));
                     }
                 }
                 catch (Exception ex)
@@ -107,10 +90,10 @@ public class KarabasScraper : IEventScraper
                 using var page = await browser.NewPageAsync();
                 page.DefaultNavigationTimeout = 60000;
 
-                await page.GoToAsync(item.Url, new NavigationOptions
-                {
-                    WaitUntil = new[] { WaitUntilNavigation.Load },
-                    Timeout = 60000
+                await page.GoToAsync(item.Url, new NavigationOptions 
+                { 
+                    WaitUntil = new[] { WaitUntilNavigation.Load }, 
+                    Timeout = 60000 
                 });
 
                 var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
@@ -165,7 +148,7 @@ public class KarabasScraper : IEventScraper
                 }");
 
                 string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
-
+                
                 var newEvent = new ScrapedEvent
                 {
                     Title = item.Title,
@@ -173,29 +156,22 @@ public class KarabasScraper : IEventScraper
                     Source = ProviderName,
                     Description = details.GetProperty("Description").GetString() ?? "",
                     Date = details.GetProperty("Date").GetString() ?? "",
-                    ParsedDate = DateParser.ParseUkrainianDate(rawDate),
+                    ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
                     City = item.City.ToUpper(),
                     Category = item.Category,
-                    ImageUrl = details.GetProperty("ImageUrl").GetString() ?? ""
+                    ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
                 };
 
-                lock (allEvents)
-                {
-                    allEvents.Add(newEvent);
-                }
-
+                lock (allEvents) { allEvents.Add(newEvent); }
                 _logger.LogInformation("✅ Karabas: {Title}", newEvent.Title);
-
+                
                 await Task.Delay(Random.Shared.Next(500, 1000));
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("⚠️ Помилка завантаження {Url}: {Msg}", item.Url, ex.Message);
             }
-            finally
-            {
-                _semaphore.Release();
-            }
+            finally { _semaphore.Release(); }
         });
 
         await Task.WhenAll(tasks);
@@ -207,20 +183,14 @@ public class KarabasScraper : IEventScraper
         try 
         {
             await page.EvaluateFunctionAsync(@"async () => {
-            let lastHeight = 0;
-            let attempts = 0;
-            const maxAttempts = 10;
-            
-            while (attempts < maxAttempts) {
-                window.scrollTo(0, document.body.scrollHeight);
-                await new Promise(r => setTimeout(r, 2000));
-                
-                const newHeight = document.body.scrollHeight;
-                if (newHeight === lastHeight) break;
-                lastHeight = newHeight;
-                attempts++;
-            }
-        }");
+                let times = 0;
+                const maxTimes = 3;
+                while (times < maxTimes) {
+                    window.scrollTo(0, document.body.scrollHeight);
+                    await new Promise(r => setTimeout(r, 1500));
+                    times++;
+                }
+            }");
         } catch { }
     }
 }
