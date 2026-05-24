@@ -10,8 +10,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventAggregator.Infrastruct
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventAggregator.Api", "EventAggregator.Api\EventAggregator.Api.csproj", "{5E80A848-DF43-43BB-A4C9-BFEEFBBCE33A}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "event-aggregator-mcp", "event-aggregator-mcp", "{001093D8-C42B-453B-95CF-735110471893}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "event-aggregator-mcp", "event-aggregator-mcp", "{E2FD82D4-4F14-44CC-AB75-7EBAB9EF6F6C}"
 EndProject
 Global
