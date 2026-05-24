@@ -37,6 +37,8 @@ services:
       context: .
       dockerfile: EventAggregator.Collector/Dockerfile
     container_name: event_aggregator_collector
+    env_file:           
+      - .env
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
       - Gemini__ApiKey=${GEMINI_API_KEY:-""}
