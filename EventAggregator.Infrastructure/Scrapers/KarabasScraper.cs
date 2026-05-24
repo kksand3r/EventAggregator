@@ -20,15 +20,14 @@ public class KarabasScraper : IEventScraper
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
     
-    // Для другого етапу (Puppeteer) залишаємо 2 потоки, щоб не перевантажувати VPS картинками
     private readonly SemaphoreSlim _semaphore = new(2); 
 
     private readonly string[] _citySlugs = 
     {
-        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv" // "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
     
     private readonly string[] _categories = { "concerts", "theatres", "stand-up", "child", "clubs", "inshe", "festivals" };
@@ -41,10 +40,6 @@ public class KarabasScraper : IEventScraper
         if (browser.IsClosed) return allEvents;
 
         var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
-
-        // ==========================================
-        // 1. ЕТАП ЗБОРУ ПОСИЛАНЬ (HTTP CLIENT + API)
-        // ==========================================
         
         string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
         var handler = new HttpClientHandler();
@@ -60,8 +55,7 @@ public class KarabasScraper : IEventScraper
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
             httpClient.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/javascript, */*; q=0.01");
-
-            // Timestamp початку сьогоднішнього дня
+            
             long timeStamp = new DateTimeOffset(DateTime.UtcNow.Date).ToUnixTimeSeconds();
 
             foreach (var city in _citySlugs)
@@ -75,7 +69,7 @@ public class KarabasScraper : IEventScraper
 
                     while (hasMorePages)
                     {
-                        if (browser.IsClosed) return allEvents; // Ранній вихід, якщо роботу зупинено
+                        if (browser.IsClosed) return allEvents; 
 
                         string targetUrl = $"https://{city}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
                         
@@ -93,19 +87,16 @@ public class KarabasScraper : IEventScraper
                             using var doc = JsonDocument.Parse(jsonString);
                             var root = doc.RootElement;
 
-                            // 1. Парсимо контент (події)
                             if (root.TryGetProperty("content", out var contentEl))
                             {
                                 string htmlContent = contentEl.GetString() ?? "";
                                 
-                                // Регулярка для пошуку блоку title-row і посилання в ньому
                                 var regex = new Regex(@"<div[^>]*class\s*=\s*""[^""]*title-row[^""]*""[^>]*>\s*<a\s+href\s*=\s*""([^""]+)""[^>]*>([\s\S]*?)</a>", RegexOptions.IgnoreCase);
                                 var matches = regex.Matches(htmlContent);
 
                                 foreach (Match m in matches)
                                 {
                                     var url = m.Groups[1].Value.Trim().Replace("\\/", "/");
-                                    // Очищаємо заголовок від зайвих пробілів та HTML тегів (на всяк випадок)
                                     var title = Regex.Replace(m.Groups[2].Value, "<.*?>", string.Empty).Trim().Replace("\n", " ");
                                     
                                     if (url.StartsWith("/")) url = "https://karabas.com" + url;
@@ -122,7 +113,6 @@ public class KarabasScraper : IEventScraper
                                 }
                             }
 
-                            // 2. Перевіряємо пагінацію (чи є наступна сторінка)
                             hasMorePages = false;
                             if (root.TryGetProperty("pagination", out var pagEl))
                             {
@@ -131,7 +121,7 @@ public class KarabasScraper : IEventScraper
                                 {
                                     hasMorePages = true;
                                     page++;
-                                    await Task.Delay(Random.Shared.Next(800, 1500)); // Пауза між сторінками
+                                    await Task.Delay(Random.Shared.Next(800, 1500)); 
                                 }
                             }
                         }
@@ -142,17 +132,14 @@ public class KarabasScraper : IEventScraper
                         }
                     }
                     
-                    // Пауза між категоріями
+                    
                     await Task.Delay(Random.Shared.Next(1000, 2000));
                 }
             }
         }
 
         _logger.LogInformation("🚀 Karabas: Глибокий збір деталей для {Count} подій через Puppeteer...", linksToScrape.Count);
-
-        // ==========================================
-        // 2. ЕТАП ГЛИБОКОГО ЗБОРУ (PUPPETEER)
-        // ==========================================
+        
         var tasks = linksToScrape.Select(async item =>
         {
             await _semaphore.WaitAsync();
@@ -172,7 +159,6 @@ public class KarabasScraper : IEventScraper
                     page.DefaultNavigationTimeout = 60000;
                     page.DefaultTimeout = 60000;
 
-                    // Зверни увагу: тут ми НЕ блокуємо картинки, як ти просив раніше, щоб парсити ImageUrl
                     await page.GoToAsync(item.Url, new NavigationOptions 
                     { 
                         WaitUntil = new[] { WaitUntilNavigation.Load }, 
@@ -248,7 +234,8 @@ public class KarabasScraper : IEventScraper
                     lock (allEvents) { allEvents.Add(newEvent); }
                     _logger.LogInformation("✅ Karabas: {Title} [{City}]", newEvent.Title, newEvent.City);
                     
-                    break; // Виходимо з циклу спроб при успіху
+                    break; 
+                    
                 }
                 catch (PuppeteerException ex) when (ex.Message.Contains("Timeout") || ex.Message.Contains("exceeded"))
                 {
