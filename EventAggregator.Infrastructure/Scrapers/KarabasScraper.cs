@@ -16,10 +16,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs = 
     {
-        "kyiv" // "odesa" "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
     
     private readonly string[] _categories = { "concerts", "theatres", "stand-up", "child", "clubs", "inshe", "festivals" };
@@ -49,11 +49,12 @@ public class KarabasScraper : IEventScraper
                 {
                     await mainPage.GoToAsync(targetUrl, new NavigationOptions 
                     { 
-                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 }, 
+                        WaitUntil = new[] { WaitUntilNavigation.Load },
                         Timeout = 60000 
                     });
                     
                     await AutoScrollAsync(mainPage);
+                    await Task.Delay(2000);
 
                     var data = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
                         return Array.from(document.querySelectorAll('div.result-event'))
@@ -67,7 +68,6 @@ public class KarabasScraper : IEventScraper
                     foreach (var d in data)
                     {
                         var url = d.GetProperty("url").GetString() ?? "";
-                        // URL події завжди містить slug з дефісом
                         var lastSegment = url.TrimEnd('/').Split('/').Last();
                         if (!linksToScrape.Any(x => x.Url == url) && lastSegment.Contains('-'))
                             linksToScrape.Add((d.GetProperty("title").GetString() ?? "Без назви", url, city.ToUpper(), category));
@@ -98,7 +98,6 @@ public class KarabasScraper : IEventScraper
                     Timeout = 60000 
                 });
 
-                // Перевір що сторінка не 404
                 var is404 = await page.EvaluateFunctionAsync<bool>(@"() => 
                     document.body.innerText.includes('Сторінка не знайдена')
                 ");
@@ -195,17 +194,17 @@ public class KarabasScraper : IEventScraper
         try 
         {
             await page.EvaluateFunctionAsync(@"async () => {
-                let lastHeight = 0;
+                let lastCount = 0;
                 let attempts = 0;
-                const maxAttempts = 10;
+                const maxAttempts = 15;
                 
                 while (attempts < maxAttempts) {
                     window.scrollTo(0, document.body.scrollHeight);
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, 2500));
                     
-                    const newHeight = document.body.scrollHeight;
-                    if (newHeight === lastHeight) break;
-                    lastHeight = newHeight;
+                    const currentCount = document.querySelectorAll('div.result-event').length;
+                    if (currentCount === lastCount) break;
+                    lastCount = currentCount;
                     attempts++;
                 }
             }");
