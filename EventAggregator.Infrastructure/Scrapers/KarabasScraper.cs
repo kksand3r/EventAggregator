@@ -11,7 +11,8 @@ public class KarabasScraper : IEventScraper
 {
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
-    private readonly SemaphoreSlim _semaphore = new(4); 
+    
+    private readonly SemaphoreSlim _semaphore = new(2); 
 
     private readonly string[] _citySlugs = 
     {
@@ -30,26 +31,31 @@ public class KarabasScraper : IEventScraper
         var allEvents = new List<ScrapedEvent>();
         if (browser.IsClosed) return allEvents;
 
-        using var mainPage = await browser.NewPageAsync();
-        mainPage.DefaultNavigationTimeout = 60000; 
-        await mainPage.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
-        await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
-
         var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
-
+        
         foreach (var city in _citySlugs)
         {
             _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City}", city.ToUpper());
 
             foreach (var category in _categories)
             {
+                if (browser.IsClosed) break;
+
                 string targetUrl = $"https://{city}.karabas.com/ua/{category}/";
+                IPage mainPage = null; 
+
                 try
                 {
+                    mainPage = await browser.NewPageAsync();
+                    mainPage.DefaultNavigationTimeout = 60000;
+                    mainPage.DefaultTimeout = 60000;
+                    await mainPage.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
+                    await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
+
                     await mainPage.GoToAsync(targetUrl, new NavigationOptions 
                     { 
                         WaitUntil = new[] { WaitUntilNavigation.DOMContentLoaded }, 
-                        Timeout = 45000 
+                        Timeout = 60000 
                     });
                     
                     await AutoScrollAsync(mainPage);
@@ -77,6 +83,13 @@ public class KarabasScraper : IEventScraper
                 {
                     _logger.LogWarning("⚠️ Пропущено список {Url}: {Msg}", targetUrl, ex.Message);
                 }
+                finally
+                {
+                    if (mainPage != null && !mainPage.IsClosed)
+                    {
+                        await mainPage.CloseAsync();
+                    }
+                }
             }
         }
 
@@ -85,16 +98,18 @@ public class KarabasScraper : IEventScraper
         var tasks = linksToScrape.Select(async item =>
         {
             await _semaphore.WaitAsync();
+            IPage page = null;
             try
             {
                 if (browser.IsClosed) return;
 
-                using var page = await browser.NewPageAsync();
+                page = await browser.NewPageAsync();
                 page.DefaultNavigationTimeout = 60000;
+                page.DefaultTimeout = 60000;
 
                 await page.GoToAsync(item.Url, new NavigationOptions 
                 { 
-                    WaitUntil = new[] { WaitUntilNavigation.Load }, 
+                    WaitUntil = new[] { WaitUntilNavigation.DOMContentLoaded }, 
                     Timeout = 60000 
                 });
 
@@ -125,15 +140,19 @@ public class KarabasScraper : IEventScraper
                 };
 
                 lock (allEvents) { allEvents.Add(newEvent); }
-                _logger.LogInformation("✅ Karabas: {Title}", newEvent.Title);
+                _logger.LogInformation("✅ Karabas: {Title} [{City}]", newEvent.Title, newEvent.City);
                 
-                await Task.Delay(Random.Shared.Next(800, 1500));
+                await Task.Delay(Random.Shared.Next(1000, 2000));
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("⚠️ Помилка завантаження {Url}: {Msg}", item.Url, ex.Message);
+                _logger.LogWarning("⚠️ Помилка завантаження деталей {Url}: {Msg}", item.Url, ex.Message);
             }
-            finally { _semaphore.Release(); }
+            finally 
+            { 
+                if (page != null && !page.IsClosed) await page.CloseAsync();
+                _semaphore.Release(); 
+            }
         });
 
         await Task.WhenAll(tasks);
@@ -142,6 +161,10 @@ public class KarabasScraper : IEventScraper
 
     private static async Task AutoScrollAsync(IPage page)
     {
-        try { await page.EvaluateFunctionAsync(@"async () => { window.scrollTo(0, document.body.scrollHeight); await new Promise(r => setTimeout(r, 1000)); }"); } catch { }
+        try 
+        { 
+            await page.EvaluateFunctionAsync(@"async () => { window.scrollTo(0, document.body.scrollHeight); await new Promise(r => setTimeout(r, 1500)); }"); 
+        } 
+        catch { }
     }
 }
