@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -30,7 +31,10 @@ public class ScrapingWorker : BackgroundService
         _logger.LogInformation("🌐 Підготовка браузера для Cron-завдання...");
         try 
         {
-            await new BrowserFetcher().DownloadAsync();
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                await new BrowserFetcher().DownloadAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -44,26 +48,47 @@ public class ScrapingWorker : BackgroundService
     {
         _logger.LogInformation("🚀 Початок сесії скрайпінгу: {time}", DateTimeOffset.Now);
 
-        // Отримуємо проксі з оточення (PROXY_SERVER у .env)
         string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
 
         try
         {
-            var launchOptions = new LaunchOptions 
-            { 
-                Headless = true,
-                Args = new[] 
+            LaunchOptions launchOptions;
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                launchOptions = new LaunchOptions 
                 { 
-                    "--no-sandbox", 
-                    "--disable-setuid-sandbox", 
-                    "--disable-dev-shm-usage", 
-                    "--disable-blink-features=AutomationControlled",
-                    // Додаємо проксі, якщо він заданий
-                    !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : "",
-                    "--window-size=1920,1080",
-                    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-                }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray() // Фільтруємо пусті рядки
-            };
+                    Headless = true,
+                    ExecutablePath = "/usr/bin/chromium",
+                    Args = new[] 
+                    { 
+                        "--no-sandbox", 
+                        "--disable-setuid-sandbox", 
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-software-rasterizer",
+                        "--disable-blink-features=AutomationControlled",
+                        "--window-size=1920,1080",
+                        !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : ""
+                    }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray()
+                };
+            }
+            else
+            {
+                launchOptions = new LaunchOptions 
+                { 
+                    Headless = true,
+                    Args = new[] 
+                    { 
+                        "--no-sandbox", 
+                        "--disable-setuid-sandbox", 
+                        "--disable-dev-shm-usage", 
+                        "--disable-blink-features=AutomationControlled",
+                        "--window-size=1920,1080",
+                        !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : ""
+                    }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray()
+                };
+            }
 
             using (var browser = await Puppeteer.LaunchAsync(launchOptions))
             {
@@ -79,7 +104,7 @@ public class ScrapingWorker : BackgroundService
         finally
         {
             _hostApplicationLifetime.StopApplication();
-            Environment.Exit(0); // Гарантоване завершення процесу
+            Environment.Exit(0);
         }
     }
 }
