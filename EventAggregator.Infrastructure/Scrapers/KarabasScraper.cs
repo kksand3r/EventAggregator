@@ -58,27 +58,30 @@ public class KarabasScraper : IEventScraper
                     await AutoScrollAsync(mainPage);
 
                     var data = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
-                    return Array.from(document.querySelectorAll('a[href*=""karabas.com""]'))
-                        .filter(a => {
-                            const url = a.href;
-                            return url.includes('.karabas.com/') && 
-                                   !url.endsWith('/ru/') && 
-                                   !url.endsWith('/uk/') &&
-                                   !url.includes('/hall/') && 
-                                   !url.includes('/order/') &&
-                                   !url.includes('/concerts/') &&
-                                   !url.includes('/theatres/') &&
-                                   !url.includes('/stand-up/') &&
-                                   !url.includes('/child/') &&
-                                   !url.includes('/clubs/') &&
-                                   !url.includes('/festivals/') &&
-                                   a.innerText.trim().length > 0
-                        })
-                        .map(ev => ({
-                            title: ev.innerText.trim(),
-                            url: ev.href
-                        }))
-                        .filter((e, i, arr) => arr.findIndex(x => x.url === e.url) === i);
+                        return Array.from(document.querySelectorAll('a[href*=""karabas.com""]'))
+                            .filter(a => {
+                                const url = a.href;
+                                const path = new URL(url).pathname;
+                                const segments = path.split('/').filter(s => s.length > 0);
+                                
+                                return url.includes('.karabas.com/') && 
+                                       !url.includes('/order/') &&
+                                       !url.includes('/concerts') &&
+                                       !url.includes('/theatres') &&
+                                       !url.includes('/stand-up') &&
+                                       !url.includes('/child') &&
+                                       !url.includes('/clubs') &&
+                                       !url.includes('/festivals') &&
+                                       !url.includes('/inshe') &&
+                                       segments.length >= 2 &&
+                                       segments[segments.length - 1].includes('-') &&
+                                       a.innerText.trim().length > 3
+                            })
+                            .map(ev => ({
+                                title: ev.innerText.trim(),
+                                url: ev.href
+                            }))
+                            .filter((e, i, arr) => arr.findIndex(x => x.url === e.url) === i);
                     }");
 
                     foreach (var d in data)
