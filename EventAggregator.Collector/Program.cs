@@ -35,18 +35,7 @@ try
 
     Log.Information("🌐 Підготовка браузера...");
 
-    var launchOptions = new LaunchOptions 
-    { 
-        Headless = true,
-        Args = new[] 
-        { 
-            "--no-sandbox", 
-            "--disable-setuid-sandbox", 
-            "--disable-dev-shm-usage",
-            "--disable-gpu", 
-            "--disable-software-rasterizer"
-        }
-    };
+    LaunchOptions launchOptions;
     
     if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
     {
@@ -58,13 +47,41 @@ try
             return; 
         }
         
-        launchOptions.ExecutablePath = "/usr/bin/chromium";
+        launchOptions = new LaunchOptions 
+        { 
+            Headless = true,
+            ExecutablePath = "/usr/bin/chromium",
+            Args = new[] 
+            { 
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-software-rasterizer",
+                "--window-size=1920,1080",
+                "--start-maximized"
+            }
+        };
     }
     else
     {
         Log.Information("💻 Виявлено Windows/Mac. Завантажуємо локальний Chromium для розробки...");
         var browserFetcher = new BrowserFetcher();
         await browserFetcher.DownloadAsync();
+        
+        launchOptions = new LaunchOptions 
+        { 
+            Headless = true,
+            Args = new[] 
+            { 
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage",
+                "--disable-gpu", 
+                "--disable-software-rasterizer",
+                "--window-size=1920,1080"
+            }
+        };
     }
 
     var scrapingService = host.Services.GetRequiredService<ScrapingService>();
