@@ -32,5 +32,5 @@ jobs:
             cd /home/${{ secrets.SERVER_USER }}/event-aggregator
             export GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             export ELASTICSEARCH_URL=${{ secrets.ELASTIC_URL }}
-            docker-compose down
-            docker-compose up -d --build
+            docker compose down
+            docker compose up -d --build
