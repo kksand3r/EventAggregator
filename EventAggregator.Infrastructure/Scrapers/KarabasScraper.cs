@@ -65,6 +65,7 @@ public class KarabasScraper : IEventScraper
                                 const segments = path.split('/').filter(s => s.length > 0);
                                 
                                 return url.includes('.karabas.com/') && 
+                                       !url.includes('/hall/') &&
                                        !url.includes('/concerts') &&
                                        !url.includes('/theatres') &&
                                        !url.includes('/stand-up') &&
@@ -72,6 +73,7 @@ public class KarabasScraper : IEventScraper
                                        !url.includes('/clubs') &&
                                        !url.includes('/festivals') &&
                                        !url.includes('/inshe') &&
+                                       !url.includes('/order') &&
                                        segments.length >= 2 &&
                                        segments[segments.length - 1].includes('-') &&
                                        a.innerText.trim().length > 3
