@@ -26,6 +26,7 @@ services:
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
       - ASPNETCORE_ENVIRONMENT=Production
+      - Gemini__ApiKey=${GEMINI_API_KEY}
     depends_on:
       - elasticsearch
     networks:
@@ -39,7 +40,7 @@ services:
     container_name: event_aggregator_collector
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
-      - Gemini__ApiKey=${GEMINI_API_KEY}
+      - Gemini__ApiKey=${GEMINI_API_KEY:-"}
     depends_on:
       - elasticsearch
     networks:
