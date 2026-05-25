@@ -27,7 +27,7 @@ namespace EventAggregator.Api.Controllers
             var keywords = await gemini.GetSearchKeywordsAsync(query);
 
             if (keywords == null || keywords.Length == 0)
-                return await Search(query, size);
+                return await Search(query, null, size: size);
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .Size(size)
@@ -50,7 +50,6 @@ namespace EventAggregator.Api.Controllers
             return Ok(response.Documents.Select(d => d.ToDto()));
         }
 
-        [HttpGet("search")]
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] string? city, [FromQuery] int size = 20)
         {
