@@ -13,14 +13,14 @@ public class ConcertUaScraper : IEventScraper
     private readonly ILogger<ConcertUaScraper> _logger;
     private readonly SemaphoreSlim _semaphore = new(4);
 
-    private readonly string[] _citySlugs = 
+    private readonly string[] _citySlugs =
     {
         "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
         "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
-    
+
     public ConcertUaScraper(ILogger<ConcertUaScraper> logger)
     {
         _logger = logger;
@@ -30,7 +30,8 @@ public class ConcertUaScraper : IEventScraper
     {
         var allCollectedEvents = new List<ScrapedEvent>();
         using var mainPage = await browser.NewPageAsync();
-        await mainPage.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        await mainPage.SetUserAgentAsync(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
         var eventLinks = new List<(string Title, string Url, string CitySlug)>();
 
@@ -40,7 +41,7 @@ public class ConcertUaScraper : IEventScraper
             try
             {
                 await mainPage.GoToAsync($"https://concert.ua/uk/{citySlug}", WaitUntilNavigation.Networkidle2);
-                
+
                 var links = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
                     return Array.from(document.querySelectorAll('a[href*=""/event/""]'))
                         .map(card => ({
@@ -68,7 +69,7 @@ public class ConcertUaScraper : IEventScraper
         }
 
         _logger.LogInformation("🚀 Concert.ua: Детальний збір {Count} подій...", eventLinks.Count);
-        
+
         var tasks = eventLinks.Select(async item =>
         {
             await _semaphore.WaitAsync();
@@ -76,7 +77,7 @@ public class ConcertUaScraper : IEventScraper
             {
                 using var page = await browser.NewPageAsync();
                 await page.GoToAsync(item.Url, WaitUntilNavigation.Load);
-                
+
                 var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
                     const clean = (text) => text ? text.replace(/[\u00A0\t\r\n]+/g, ' ').replace(/\s\s+/g, ' ').trim() : '';
                     const getTxt = (sel) => document.querySelector(sel)?.innerText || '';
@@ -104,16 +105,17 @@ public class ConcertUaScraper : IEventScraper
                 }");
 
                 string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
-                
+
                 string rawCategory = details.GetProperty("Category").GetString()?.ToLower() ?? "інше";
                 string mappedCategory = rawCategory switch
                 {
                     var c when c.Contains("театр") || c.Contains("комедія") || c.Contains("вистава") => "theatres",
-                    var c when c.Contains("концерт") || c.Contains("поп") || c.Contains("рок") || c.Contains("музика") => "concerts",
+                    var c when c.Contains("концерт") || c.Contains("поп") || c.Contains("рок") ||
+                               c.Contains("музика") => "concerts",
                     var c when c.Contains("стендап") || c.Contains("stand-up") || c.Contains("гумор") => "stand-up",
                     var c when c.Contains("дітям") || c.Contains("дитяч") => "child",
                     var c when c.Contains("фестиваль") => "festivals",
-                    _ => "inshe" 
+                    _ => "inshe"
                 };
 
                 var newEvent = new ScrapedEvent
@@ -129,7 +131,11 @@ public class ConcertUaScraper : IEventScraper
                     ImageUrl = details.GetProperty("ImageUrl").GetString() ?? ""
                 };
 
-                lock (allCollectedEvents) { allCollectedEvents.Add(newEvent); }
+                lock (allCollectedEvents)
+                {
+                    allCollectedEvents.Add(newEvent);
+                }
+
                 _logger.LogInformation("✅ Concert.ua: {Title} -> {Category}", newEvent.Title, newEvent.Category);
                 await Task.Delay(Random.Shared.Next(300, 700));
             }

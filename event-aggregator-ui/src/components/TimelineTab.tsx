@@ -1,10 +1,12 @@
 ﻿"use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Calendar, MapPin, Tag, Loader2, X, Clock, Filter } from "lucide-react";
-import { fetchEvents, fetchMetadata, type EventListItem } from "@/lib/api";
-import { formatCategory, getCategoryColor } from "@/lib/categoryMapping";
+import {useEffect, useState, useCallback, useMemo} from "react";
+import {ChevronLeft, ChevronRight, MapPin, Tag, Loader2, X, Clock, Filter} from "lucide-react";
+import {fetchEvents, type EventListItem} from "@/lib/api";
+import {formatCategory} from "@/lib/categoryMapping";
 import Link from "next/link";
+import {useMetadata} from "@/hooks/useMetadata";
+
 function parseEventDate(dateStr: string): Date | null {
     const match = dateStr.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
     if (!match) return null;
@@ -27,25 +29,23 @@ function formatCityName(city: string): string {
 }
 
 const CAT_DOTS: Record<string, string> = {
-    concerts:  "bg-violet-500",
-    theatres:  "bg-pink-500",
-    comedy:    "bg-amber-500",
-    family:    "bg-cyan-500",
-    clubs:     "bg-fuchsia-500",
+    concerts: "bg-violet-500",
+    theatres: "bg-pink-500",
+    comedy: "bg-amber-500",
+    family: "bg-cyan-500",
+    clubs: "bg-fuchsia-500",
     festivals: "bg-indigo-500",
-    other:     "bg-slate-400",
+    other: "bg-slate-400",
 };
+
 function catDot(cat: string) {
     return CAT_DOTS[cat.toLowerCase()] ?? "bg-violet-400";
 }
 
-const MONTHS = ["January","February","March","April","May","June",
-    "July","August","September","October","November","December"];
-const WEEKDAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-// ─────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────
 interface CalendarDay {
     date: Date;
     isCurrentMonth: boolean;
@@ -53,10 +53,7 @@ interface CalendarDay {
     events: EventListItem[];
 }
 
-// ─────────────────────────────────────────────
-// Event Drawer
-// ─────────────────────────────────────────────
-function EventDrawer({ day, events, onClose }: {
+function EventDrawer({day, events, onClose}: {
     day: Date;
     events: EventListItem[];
     onClose: () => void;
@@ -71,8 +68,9 @@ function EventDrawer({ day, events, onClose }: {
                 className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
                 onClick={onClose}
             />
-            <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md flex flex-col card-glass shadow-2xl border-l border-white/60"
-                 style={{ animation: "slideIn 0.25s ease-out" }}>
+            <div
+                className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md flex flex-col card-glass shadow-2xl border-l border-white/60"
+                style={{animation: "slideIn 0.25s ease-out"}}>
 
                 <div className="flex items-center justify-between px-6 py-5 border-b border-white/40">
                     <div>
@@ -85,7 +83,7 @@ function EventDrawer({ day, events, onClose }: {
                         onClick={onClose}
                         className="w-9 h-9 rounded-full bg-white/60 hover:bg-white/90 flex items-center justify-center transition-colors"
                     >
-                        <X className="h-4 w-4 text-violet-700" />
+                        <X className="h-4 w-4 text-violet-700"/>
                     </button>
                 </div>
 
@@ -100,29 +98,31 @@ function EventDrawer({ day, events, onClose }: {
                         .map(event => {
                             const d = parseEventDate(event.date);
                             const timeLabel = d
-                                ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+                                ? d.toLocaleTimeString("en-GB", {hour: "2-digit", minute: "2-digit"})
                                 : null;
 
                             return (
                                 <div key={event.id}
                                      className="bg-white/100 backdrop-blur-md rounded-2xl p-4 border border-white/80 hover:shadow-md transition-shadow">
                                     <div className="flex items-start gap-3">
-                                        <div className={`w-3 h-3 rounded-full ${catDot(event.category)} shrink-0 mt-1.5`} />
+                                        <div
+                                            className={`w-3 h-3 rounded-full ${catDot(event.category)} shrink-0 mt-1.5`}/>
                                         <div className="flex-1 min-w-0">
                                             <h3 className="font-semibold text-foreground line-clamp-2 mb-2 leading-snug">
                                                 {event.title}
                                             </h3>
-                                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-violet-700/80 mb-3">
+                                            <div
+                                                className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-violet-700/80 mb-3">
                                                 {timeLabel && (
                                                     <span className="flex items-center gap-1">
-                                                        <Clock className="h-3.5 w-3.5" />{timeLabel}
+                                                        <Clock className="h-3.5 w-3.5"/>{timeLabel}
                                                     </span>
                                                 )}
                                                 <span className="flex items-center gap-1">
-                                                    <MapPin className="h-3.5 w-3.5" />{formatCityName(event.city)}
+                                                    <MapPin className="h-3.5 w-3.5"/>{formatCityName(event.city)}
                                                 </span>
                                                 <span className="flex items-center gap-1">
-                                                    <Tag className="h-3.5 w-3.5" />{formatCategory(event.category)}
+                                                    <Tag className="h-3.5 w-3.5"/>{formatCategory(event.category)}
                                                 </span>
                                             </div>
                                             <Link
@@ -141,18 +141,21 @@ function EventDrawer({ day, events, onClose }: {
 
             <style jsx>{`
                 @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to   { transform: translateX(0);    opacity: 1; }
+                    from {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
                 }
             `}</style>
         </>
     );
 }
 
-// ─────────────────────────────────────────────
-// Day Cell
-// ─────────────────────────────────────────────
-function DayCell({ day, onClick }: { day: CalendarDay; onClick: () => void }) {
+function DayCell({day, onClick}: { day: CalendarDay; onClick: () => void }) {
     const hasEvents = day.events.length > 0;
     const topCats = Array.from(new Set(day.events.map(e => e.category))).slice(0, 3);
 
@@ -187,7 +190,7 @@ function DayCell({ day, onClick }: { day: CalendarDay; onClick: () => void }) {
                 <div className="space-y-1.5">
                     <div className="flex gap-1 flex-wrap">
                         {topCats.map(cat => (
-                            <span key={cat} className={`w-2 h-2 rounded-full ${catDot(cat)} shadow-sm`} />
+                            <span key={cat} className={`w-2 h-2 rounded-full ${catDot(cat)} shadow-sm`}/>
                         ))}
                     </div>
                     <span className={`
@@ -206,9 +209,6 @@ function DayCell({ day, onClick }: { day: CalendarDay; onClick: () => void }) {
     );
 }
 
-// ─────────────────────────────────────────────
-// Main Component
-// ─────────────────────────────────────────────
 export default function TimelineTab() {
     const today = new Date();
     const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -217,28 +217,40 @@ export default function TimelineTab() {
     const [loading, setLoading] = useState(true);
     const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
     const [viewMode, setViewMode] = useState<"month" | "week">("month");
-
     const [selectedCity, setSelectedCity] = useState("All");
     const [selectedCategory, setSelectedCategory] = useState("All");
-    const [metadata, setMetadata] = useState<{ cities: string[], categories: string[] }>({ cities: [], categories: [] });
-
-    useEffect(() => {
-        fetchMetadata().then(setMetadata).catch(console.error);
-    }, []);
+    const {metadata} = useMetadata();
+    const clearFilters = () => {
+        setSelectedCity("All");
+        setSelectedCategory("All");
+    };
 
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
+        setEvents([]);
+
         fetchEvents({
             page: 1,
             pageSize: 1000,
-            city: selectedCity,
-            category: selectedCategory
+            city: selectedCity === "All" ? undefined : selectedCity,
+            category: selectedCategory === "All" ? undefined : selectedCategory
         })
-            .then(res => { if (!cancelled) setEvents(res.data); })
+            .then(res => {
+                if (!cancelled) setEvents(res.data);
+            })
             .catch(console.error)
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedCity, selectedCategory]);
+
+    useEffect(() => {
+        setSelectedDay(null);
     }, [selectedCity, selectedCategory]);
 
     const eventsByDayMap = useMemo(() => {
@@ -252,7 +264,7 @@ export default function TimelineTab() {
         }
         return map;
     }, [events]);
-    
+
     const buildGrid = useCallback(() => {
         const days: CalendarDay[] = [];
         const map = eventsByDayMap;
@@ -315,12 +327,16 @@ export default function TimelineTab() {
     const grid = buildGrid();
 
     const prevMonth = () => {
-        if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
-        else setViewMonth(m => m - 1);
+        if (viewMonth === 0) {
+            setViewYear(y => y - 1);
+            setViewMonth(11);
+        } else setViewMonth(m => m - 1);
     };
     const nextMonth = () => {
-        if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
-        else setViewMonth(m => m + 1);
+        if (viewMonth === 11) {
+            setViewYear(y => y + 1);
+            setViewMonth(0);
+        } else setViewMonth(m => m + 1);
     };
 
     return (
@@ -328,19 +344,24 @@ export default function TimelineTab() {
             <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-1 card-glass rounded-2xl px-2 py-1.5 shadow-sm">
-                        <button onClick={prevMonth} className="w-8 h-8 rounded-xl hover:bg-violet-100 flex items-center justify-center transition-colors">
-                            <ChevronLeft className="h-4 w-4 text-violet-600" />
+                        <button onClick={prevMonth}
+                                className="w-8 h-8 rounded-xl hover:bg-violet-100 flex items-center justify-center transition-colors">
+                            <ChevronLeft className="h-4 w-4 text-violet-600"/>
                         </button>
                         <span className="font-bold text-foreground min-w-[160px] text-center text-lg">
                             {MONTHS[viewMonth]} {viewYear}
                         </span>
-                        <button onClick={nextMonth} className="w-8 h-8 rounded-xl hover:bg-violet-100 flex items-center justify-center transition-colors">
-                            <ChevronRight className="h-4 w-4 text-violet-600" />
+                        <button onClick={nextMonth}
+                                className="w-8 h-8 rounded-xl hover:bg-violet-100 flex items-center justify-center transition-colors">
+                            <ChevronRight className="h-4 w-4 text-violet-600"/>
                         </button>
                     </div>
 
                     <button
-                        onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); }}
+                        onClick={() => {
+                            setViewYear(today.getFullYear());
+                            setViewMonth(today.getMonth());
+                        }}
                         className="px-4 py-2 rounded-full bg-white/80 text-violet-700 text-sm font-bold hover:bg-white transition-colors border border-white/70 shadow-sm"
                     >
                         Today
@@ -349,7 +370,7 @@ export default function TimelineTab() {
                     <div className="flex items-center gap-1 card-glass rounded-2xl p-1 ml-auto shadow-sm">
                         {(["month", "week"] as const).map(mode => (
                             <button
-                                key={mode}  
+                                key={mode}
                                 onClick={() => setViewMode(mode)}
                                 className={`px-5 py-2 rounded-xl text-sm font-bold transition-all capitalize
                                     ${viewMode === mode ? "bg-violet-600 text-white shadow-md" : "text-violet-700 hover:bg-violet-50"}`}
@@ -362,46 +383,57 @@ export default function TimelineTab() {
 
                 <div className="flex flex-wrap items-center gap-3 p-3 card-glass rounded-2xl border-white/60 shadow-sm">
                     <div className="flex items-center gap-2 text-violet-700 px-1">
-                        <Filter className="h-4 w-4" />
+                        <Filter className="h-4 w-4"/>
                         <span className="text-xs font-black uppercase tracking-wider">Filter:</span>
                     </div>
 
                     <div className="relative min-w-[140px]">
-                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500" />
+                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500"/>
                         <select
                             value={selectedCity}
                             onChange={(e) => setSelectedCity(e.target.value)}
                             className="w-full pl-9 pr-4 py-2 bg-white/60 border border-white/80 rounded-xl text-sm font-bold text-slate-800 focus:outline-none appearance-none cursor-pointer hover:bg-white"
                         >
                             <option value="All">All Cities</option>
-                            {metadata.cities.map(city => (
+                            {metadata?.cities.map(city => (
                                 <option key={city} value={city}>{formatCityName(city)}</option>
                             ))}
                         </select>
                     </div>
 
                     <div className="relative min-w-[160px]">
-                        <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500" />
+                        <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500"/>
                         <select
                             value={selectedCategory}
                             onChange={(e) => setSelectedCategory(e.target.value)}
                             className="w-full pl-9 pr-4 py-2 bg-white/60 border border-white/80 rounded-xl text-sm font-bold text-slate-800 focus:outline-none appearance-none cursor-pointer hover:bg-white"
                         >
                             <option value="All">All Categories</option>
-                            {metadata.categories.map(cat => (
+                            {metadata?.categories.map(cat => (
                                 <option key={cat} value={cat}>{formatCategory(cat)}</option>
                             ))}
                         </select>
                     </div>
 
-                    {loading && <Loader2 className="h-5 w-5 animate-spin text-violet-500 ml-auto" />}
+                    {/* Локальна кнопка скидання фільтрів */}
+                    {(selectedCity !== "All" || selectedCategory !== "All") && (
+                        <button
+                            onClick={clearFilters}
+                            className="flex items-center gap-2 px-4 py-2 ml-2 bg-violet-100 text-violet-700 rounded-xl text-xs font-bold hover:bg-violet-200 transition-colors"
+                        >
+                            <X className="w-3 h-3"/> Скинути
+                        </button>
+                    )}
+
+                    {loading && <Loader2 className="h-5 w-5 animate-spin text-violet-500 ml-auto"/>}
                 </div>
             </div>
 
             <div className="card-glass rounded-2xl overflow-hidden shadow-lg border border-white/60">
                 <div className="grid grid-cols-7 border-b border-white/60 bg-white/40">
                     {WEEKDAYS.map(day => (
-                        <div key={day} className="py-4 text-center text-[11px] font-black text-violet-800 uppercase tracking-[0.15em]">
+                        <div key={day}
+                             className="py-4 text-center text-[11px] font-black text-violet-800 uppercase tracking-[0.15em]">
                             {day}
                         </div>
                     ))}
@@ -420,8 +452,9 @@ export default function TimelineTab() {
 
             <div className="flex flex-wrap gap-3 px-2">
                 {Object.entries(CAT_DOTS).map(([cat, dot]) => (
-                    <div key={cat} className="flex items-center gap-2 text-[11px] text-slate-700 font-bold bg-white/50 px-2 py-1 rounded-lg border border-white/60">
-                        <span className={`w-2 h-2 rounded-full ${dot} shadow-sm`} />
+                    <div key={cat}
+                         className="flex items-center gap-2 text-[11px] text-slate-700 font-bold bg-white/50 px-2 py-1 rounded-lg border border-white/60">
+                        <span className={`w-2 h-2 rounded-full ${dot} shadow-sm`}/>
                         {formatCategory(cat)}
                     </div>
                 ))}
@@ -430,7 +463,7 @@ export default function TimelineTab() {
             {selectedDay && (
                 <EventDrawer
                     day={selectedDay.date}
-                    events={selectedDay.events}
+                    events={eventsByDayMap.get(toDateKey(selectedDay.date)) ?? []}
                     onClose={() => setSelectedDay(null)}
                 />
             )}
