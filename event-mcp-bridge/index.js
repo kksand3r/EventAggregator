@@ -35,7 +35,6 @@ try {
     console.error("❌ Failed to connect to MCP Server during startup:", err);
 }
 
-// Очищаємо схему від полів які Gemini не підтримує
 function cleanSchema(schema) {
     if (!schema || typeof schema !== 'object') return schema;
 
@@ -68,91 +67,98 @@ app.post('/api/mcp-search', async (req, res) => {
         const functionDeclarations = mcpTools.tools.map(tool => ({
             name: tool.name,
             description: tool.description,
-            parameters: cleanSchema(tool.inputSchema)  // ✅ очищена схема
+            parameters: cleanSchema(tool.inputSchema)
         }));
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        let geminiRequestBody = {
-            contents: [{ parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Обмежуй розмір вибірки (size) до розумних меж (наприклад, 5-10), щоб не перевантажувати контекст.` }] }],
-            tools: [{ functionDeclarations }],
-            toolConfig: { functionCallingConfig: { mode: "AUTO" } }
-        };
-
-        let response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(geminiRequestBody)
-        });
-
-        let jsonResponse = await response.json();
-
-        // Перевірка помилки першого кроку Gemini
-        if (jsonResponse.error) {
-            console.error("❌ Gemini Initial Request Error:", jsonResponse.error);
-            return res.status(400).json({ error: jsonResponse.error.message, agentMessage: "Помилка ініціалізації запиту до ШІ.", rawMcpData: [] });
-        }
-
-        console.log("[Gemini Response]:", JSON.stringify(jsonResponse, null, 2));
-        let candidate = jsonResponse.candidates?.[0];
-        let part = candidate?.content?.parts?.[0];
-        console.log("[Part]:", JSON.stringify(part, null, 2));
-
-        if (part?.functionCall) {
-            const { name, args } = part.functionCall;
-
-            // Якщо модель за замовчуванням забула вказати ліміт, примусово обмежуємо, щоб не впасти по ліміту токенів
-            if (args && !args.size) {
-                args.size = 10;
+        // Формуємо історію діалогу для послідовних викликів
+        let conversationHistory = [
+            {
+                role: "user",
+                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь.` }]
             }
+        ];
 
-            const toolResult = await mcpClient.callTool({ name, arguments: args });
+        let lastMcpData = [];
+        let loopCount = 0;
+        const MAX_LOOPS = 5; // Захист від нескінченного циклу
 
-            const finalRequestBody = {
-                contents: [
-                    { role: "user", parts: [{ text: query }] },
-                    { role: "model", parts: [part] },
-                    {
-                        role: "user",
-                        parts: [{
-                            functionResponse: {
-                                name: name,
-                                response: { output: JSON.stringify(toolResult.content) }
-                            }
-                        }]
-                    }
-                ]
+        while (loopCount < MAX_LOOPS) {
+            loopCount++;
+
+            let geminiRequestBody = {
+                contents: conversationHistory,
+                tools: [{ functionDeclarations }],
+                toolConfig: { functionCallingConfig: { mode: "AUTO" } }
             };
 
-            let finalResponse = await fetch(url, {
+            let response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(finalRequestBody)
+                body: JSON.stringify(geminiRequestBody)
             });
 
-            let finalJson = await finalResponse.json();
-            console.log("[Gemini Final Response]:", JSON.stringify(finalJson, null, 2));
+            let jsonResponse = await response.json();
 
-            // 🌟 ВИПРАВЛЕННЯ: Обробка помилок (наприклад, якщо payload завеликий через велику відповідь від Elastic)
-            if (finalJson.error) {
-                console.error("❌ Gemini Final Analysis Error:", finalJson.error);
+            if (jsonResponse.error) {
+                console.error("❌ Gemini API Error:", jsonResponse.error);
                 return res.json({
-                    agentMessage: "Я знайшов події в базі даних, проте опис результатів завеликий для формування текстового резюме через ШІ. Дивіться список подій нижче.",
-                    rawMcpData: toolResult.content
+                    agentMessage: `Виникла помилка ШІ: ${jsonResponse.error.message}`,
+                    rawMcpData: lastMcpData
                 });
             }
 
-            let finalTxt = finalJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.stringify(jsonResponse, null, 2));
+            let candidate = jsonResponse.candidates?.[0];
+            let part = candidate?.content?.parts?.[0];
 
-            return res.json({
-                agentMessage: finalTxt,
-                rawMcpData: toolResult.content
-            });
+            // Якщо модель додала свою відповідь до історії — збережемо її
+            if (candidate?.content) {
+                conversationHistory.push(candidate.content);
+            }
+
+            // Перевіряємо, чи модель хоче викликати інструмент
+            if (part?.functionCall) {
+                const { name, args, id } = part.functionCall;
+                console.log(`[Executing Tool]: ${name} with args:`, args);
+
+                // Виклик MCP інструменту
+                const toolResult = await mcpClient.callTool({ name, arguments: args });
+
+                // Зберігаємо останні дані пошуку (якщо це був пошук, C# зможе їх розпарсити)
+                lastMcpData = toolResult.content;
+
+                // Додаємо результат виконання інструменту в історію для наступного кроку Gemini
+                conversationHistory.push({
+                    role: "user",
+                    parts: [{
+                        functionResponse: {
+                            name: name,
+                            response: { output: JSON.stringify(toolResult.content) }
+                        }
+                    }]
+                });
+
+                // Йдемо на наступне коло циклу, щоб передати результат моделі
+                continue;
+            }
+
+            // Якщо інструменти більше не викликаються — значить ми отримали фінальний текст
+            if (part?.text) {
+                return res.json({
+                    agentMessage: part.text,
+                    rawMcpData: lastMcpData
+                });
+            }
+
+            // Якщо немає ні тексту, ні виклику функції
+            break;
         }
 
         return res.json({
-            agentMessage: part?.text || "Не вдалося отримати аналіз.",
-            rawMcpData: []
+            agentMessage: "Не вдалося отримати фінальний аналіз тексту від ШІ, але пошук у базі виконано.",
+            rawMcpData: lastMcpData
         });
 
     } catch (error) {
