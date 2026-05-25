@@ -9,13 +9,18 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
+// 🌟 ЧИСТИЙ ВАРІАНТ: передаємо змінні оточення Node безпосередньо в процес MCP інструменту
 const transport = new StdioClientTransport({
     command: "node",
-    args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
+    args: [
+        "./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"
+    ],
     env: {
         ...process.env,
         ES_URL: ELASTIC_URL,
-        ELASTICSEARCH_COMPATIBLE_WITH: "8",            // Емулюємо сумісність з 8 версією
+        // Примусово змушуємо внутрішній клієнт Elastic вважати, що він працює з 8 версією:
+        ELASTIC_CLIENT_PASSTHROUGH_OPTIONS: "compatible-with=8",
+        ELASTICSEARCH_COMPATIBLE_WITH: "8",
         ELASTIC_CLIENT_APIVERSIONCHECKING: "false"
     }
 });
@@ -74,17 +79,16 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        // Формуємо історію діалогу для послідовних викликів
         let conversationHistory = [
             {
                 role: "user",
-                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь.` }]
+                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Завжди обмежуй параметри 'size' до максимум 5-10 результатів.` }]
             }
         ];
 
         let lastMcpData = [];
         let loopCount = 0;
-        const MAX_LOOPS = 5; // Захист від нескінченного циклу
+        const MAX_LOOPS = 5;
 
         while (loopCount < MAX_LOOPS) {
             loopCount++;
@@ -115,23 +119,17 @@ app.post('/api/mcp-search', async (req, res) => {
             let candidate = jsonResponse.candidates?.[0];
             let part = candidate?.content?.parts?.[0];
 
-            // Якщо модель додала свою відповідь до історії — збережемо її
             if (candidate?.content) {
                 conversationHistory.push(candidate.content);
             }
 
-            // Перевіряємо, чи модель хоче викликати інструмент
             if (part?.functionCall) {
-                const { name, args, id } = part.functionCall;
+                const { name, args } = part.functionCall;
                 console.log(`[Executing Tool]: ${name} with args:`, args);
 
-                // Виклик MCP інструменту
                 const toolResult = await mcpClient.callTool({ name, arguments: args });
-
-                // Зберігаємо останні дані пошуку (якщо це був пошук, C# зможе їх розпарсити)
                 lastMcpData = toolResult.content;
 
-                // Додаємо результат виконання інструменту в історію для наступного кроку Gemini
                 conversationHistory.push({
                     role: "user",
                     parts: [{
@@ -142,11 +140,9 @@ app.post('/api/mcp-search', async (req, res) => {
                     }]
                 });
 
-                // Йдемо на наступне коло циклу, щоб передати результат моделі
                 continue;
             }
 
-            // Якщо інструменти більше не викликаються — значить ми отримали фінальний текст
             if (part?.text) {
                 return res.json({
                     agentMessage: part.text,
@@ -154,7 +150,6 @@ app.post('/api/mcp-search', async (req, res) => {
                 });
             }
 
-            // Якщо немає ні тексту, ні виклику функції
             break;
         }
 
