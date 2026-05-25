@@ -190,7 +190,7 @@ export default function SearchBar({
                     placeholder={
                         searchMode === 'ai'
                             ? "Запитайте ШІ (наприклад: куди піти з дівчиною?)..."
-                            : "Пошук подій за назвою, артистом або містом..."
+                            : "Пошук подій за назвою"
                     }
                     className="w-full h-12 pl-[42px] pr-[110px] rounded-full border border-white/90 bg-white/70 backdrop-blur-[20px] text-sm font-medium text-[#1a1535] outline-none transition-all duration-200 shadow-[0_4px_12px_rgba(0,0,0,0.03)] appearance-none placeholder:text-gray-500 [&::-webkit-search-decoration]:hidden [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-results-button]:hidden [&::-webkit-search-results-decoration]:hidden"
                 />
