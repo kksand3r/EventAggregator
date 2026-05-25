@@ -52,7 +52,7 @@ const proxy = http.createServer((req, res) => {
         }
     });
 
-    req.pipe(proxyReq); // Пересилаємо тіло запиту (наприклад, JSON-тіло пошуку)
+    req.pipe(proxyReq); // Пересилаємо тіло запиту
 });
 
 // Запускаємо проксі на локальному хості контейнера
@@ -69,7 +69,6 @@ const transport = new StdioClientTransport({
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
     env: {
         ...process.env,
-        // Направляємо MCP-сервер Elastic на наш проксі
         ES_URL: `http://127.0.0.1:${PROXY_PORT}`
     }
 });
@@ -128,7 +127,6 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        // Контекст діалогу з суворими інструкціями для мови, лімітів ТА форматування посилань
         let conversationHistory = [
             {
                 role: "user",
@@ -138,7 +136,7 @@ app.post('/api/mcp-search', async (req, res) => {
 СУВОРІ ПРАВИЛА ДЛЯ ФОРМУВАННЯ ЗАПИТУ В ELASTICSEARCH:
 1. Завжди переводи назву міста у ВЕЛИКІ ЛІТЕРИ (наприклад, замість "Миколаїв" пиши "МИКОЛАЇВ", замість "Київ" пиши "КИЇВ"). Це критично для пошуку!
 2. Для пошуку використовуй просту текстову фразу українською мовою через параметр "query" (наприклад: "концерти МИКОЛАЇВ"), не будуй занадто складні вкладені bool-структури, якщо інструмент дозволяє простий пошук.
-3. Категорії в базі можуть бути записані як у множині, так і в однині (наприклад, "концерти" або "концерт"), враховуй це.
+3. Категорії в базі можуть быть записані як у множині, так і в однині (наприклад, "концерти" або "концерт"), враховуй це.
 4. Зроби виклик інструменту пошуку лише ОДИН РАЗ за сесію. Обмежуй параметр 'size' до 5.
 5. Якщо інструмент пошуку повернув порожній результат, одразу відповідай користувачу, що подій не знайдено.
 
@@ -153,7 +151,7 @@ app.post('/api/mcp-search', async (req, res) => {
 
         let lastMcpData = [];
         let loopCount = 0;
-        const MAX_LOOPS = 4; // Захист від нескінченних повторних спроб ШІ
+        const MAX_LOOPS = 4;
 
         while (loopCount < MAX_LOOPS) {
             loopCount++;
@@ -180,16 +178,15 @@ app.post('/api/mcp-search', async (req, res) => {
                 });
             }
 
-            console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.(jsonRespostringifynse, null, 2));
+            // ✅ ТУТ СИНТАКСИС ВИПРАВЛЕНО
+            console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.stringify(jsonResponse, null, 2));
             let candidate = jsonResponse.candidates?.[0];
             let part = candidate?.content?.parts?.[0];
-
 
             if (candidate?.content) {
                 conversationHistory.push(candidate.content);
             }
 
-            // Якщо модель ініціює виклик інструменту Elastic
             if (part?.functionCall) {
                 const { name, args } = part.functionCall;
                 console.log(`[Executing Tool via Proxy]: ${name} with args:`, args);
@@ -198,12 +195,14 @@ app.post('/api/mcp-search', async (req, res) => {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
                     lastMcpData = toolResult.content;
 
+                    // ✅ Передаємо ключ "output", як і просив ваш C# бекенд
                     conversationHistory.push({
                         role: "user",
                         parts: [{
                             functionResponse: {
                                 name: name,
-                                response: { output: JSON.stringify(toolResult.content) } // 🌟 ВИПРАВЛЕНО НА output                            }
+                                response: { output: JSON.stringify(toolResult.content) }
+                            }
                         }]
                     });
                 } catch (toolError) {
@@ -222,7 +221,6 @@ app.post('/api/mcp-search', async (req, res) => {
                 continue;
             }
 
-            // Якщо модель повернула фінальну текстову відповідь для користувача
             if (part?.text) {
                 return res.json({
                     agentMessage: part.text,
