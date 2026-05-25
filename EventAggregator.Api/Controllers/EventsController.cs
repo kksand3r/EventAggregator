@@ -54,7 +54,8 @@ namespace EventAggregator.Api.Controllers
                 )
             );
 
-            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
+            if (!response.IsValidResponse)
+                return StatusCode(500, response.DebugInformation);
 
             return Ok(response.Documents.Select(d => d.ToDto()));
         }
@@ -144,6 +145,7 @@ namespace EventAggregator.Api.Controllers
             });
         }
 
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(string id)
         {
@@ -164,8 +166,8 @@ namespace EventAggregator.Api.Controllers
                 .Index("events")
                 .Size(0)
                 .Aggregations(a => a
-                    .Add("unique_cities", ag => ag.Terms(t => t.Field("city.keyword").Size(100)))
-                    .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
+                    .Add("unique_cities", ag => ag.Terms(t => t.Field("city").Size(100)))
+                    .Add("unique_categories", ag => ag.Terms(t => t.Field("category").Size(50)))
                 )
             );
 
@@ -176,8 +178,10 @@ namespace EventAggregator.Api.Controllers
             var cityBucket = response.Aggregations.GetStringTerms("unique_cities");
             var categoryBucket = response.Aggregations.GetStringTerms("unique_categories");
 
-            if (cityBucket != null) metadata.Cities = cityBucket.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList();
-            if (categoryBucket != null) metadata.Categories = categoryBucket.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList();
+            if (cityBucket != null)
+                metadata.Cities = cityBucket.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList();
+            if (categoryBucket != null)
+                metadata.Categories = categoryBucket.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList();
 
             return Ok(metadata);
         }
@@ -189,8 +193,8 @@ namespace EventAggregator.Api.Controllers
                 .Index("events")
                 .Size(0)
                 .Aggregations(a => a
-                    .Add("events_by_city", ag => ag.Terms(t => t.Field("city.keyword").Size(10)))
-                    .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
+                    .Add("events_by_city", ag => ag.Terms(t => t.Field("city").Size(10)))
+                    .Add("events_by_category", ag => ag.Terms(t => t.Field("category").Size(10)))
                 )
             );
 
@@ -202,8 +206,10 @@ namespace EventAggregator.Api.Controllers
 
             return Ok(new
             {
-                ByCity = cityBucket?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new Dictionary<string, long>(),
-                ByCategory = categoryBucket?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new Dictionary<string, long>()
+                ByCity = cityBucket?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ??
+                         new Dictionary<string, long>(),
+                ByCategory = categoryBucket?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ??
+                             new Dictionary<string, long>()
             });
         }
 
@@ -219,7 +225,7 @@ namespace EventAggregator.Api.Controllers
             var response = await _client.UpdateAsync(request);
             return response.IsValidResponse ? Ok() : StatusCode(500, response.DebugInformation);
         }
-        
+
         [HttpGet("archive")]
         public async Task<IActionResult> GetArchive(
             [FromQuery] int page = 1,

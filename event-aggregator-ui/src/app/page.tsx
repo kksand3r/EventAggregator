@@ -53,34 +53,21 @@ function HomeContent() {
     }, []);
 
     useEffect(() => {
-        // 1. Якщо пошук порожній — просто очищаємо результати і виходимо
-        if (!filters.search.trim()) {
+        if (filters.searchMode === 'ai' || !filters.search.trim()) {
             setSearchResults(null);
             return;
         }
 
         let cancelled = false;
         setSearchLoading(true);
-
-        // 2. Вибираємо функцію залежно від режиму
-        const searchFunction = filters.searchMode === 'ai'
-            ? fetchAiSearchSuggestions(filters.search)
-            : searchEvents(filters.search, 200);
-
-        // 3. Виконуємо запит
-        searchFunction
-            .then(data => {
-                if (!cancelled) setSearchResults(data);
-            })
-            .catch(() => {
-                if (!cancelled) setSearchResults([]);
-            })
-            .finally(() => {
-                if (!cancelled) setSearchLoading(false);
-            });
-
+        searchEvents(filters.search, 200)
+            .then(data  => { if (!cancelled) setSearchResults(data); })
+            .catch(()   => { if (!cancelled) setSearchResults([]); })
+            .finally(()  => { if (!cancelled) setSearchLoading(false); });
         return () => { cancelled = true; };
-    }, [filters.search, filters.searchMode]); // Тепер ефект реагує і на перемикання режимів
+    }, [filters.search, filters.searchMode]);
+
+    const hideSearch = filters.activeTab === "stats" || filters.activeTab === "timeline";
 
     if (loading) return (
         <div className="min-h-screen flex items-center justify-center">
