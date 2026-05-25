@@ -34,7 +34,7 @@ try
     builder.Services.AddTransient<ScrapingService>();
 
     builder.Services.AddTransient<IEventScraper, KarabasScraper>();
-    //builder.Services.AddTransient<IEventScraper, ConcertUaScraper>();
+    builder.Services.AddTransient<IEventScraper, ConcertUaScraper>();
 
     using var host = builder.Build();
 
