@@ -21,39 +21,37 @@ namespace EventAggregator.Api.Controllers
         [HttpGet("ai-search")]
         public async Task<IActionResult> AiSearch([FromQuery] string? query, [FromServices] GeminiService gemini, [FromQuery] int size = 5)
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return Ok(Enumerable.Empty<EventDto>());
+            if (string.IsNullOrWhiteSpace(query)) return Ok(Enumerable.Empty<EventDto>());
     
-            // 1. Отримуємо розширений намір (keywords + city)
+            // Використовуємо новий метод для отримання структурованого наміру
             var intent = await gemini.GetSearchIntentAsync(query); 
 
-            // 2. Формуємо запит до Elastic
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .Size(size)
-                .Query(q => q
-                    .Bool(b => {
-                        var must = new List<Query>();
+                .Query(q => q.Bool(b => {
+                    var must = new List<Query>();
 
-                        // Пошук за ключовими словами
-                        if (intent.Keywords != null && intent.Keywords.Length > 0)
-                        {
-                            must.Add(new MultiMatchQuery {
-                                Fields = new[] { "category^3", "title^2", "description" },
-                                Query = string.Join(" ", intent.Keywords),
-                                Fuzziness = new Fuzziness("AUTO")
-                            });
-                        }
+                    // 1. Пошук по ключових словах (якщо вони є)
+                    if (intent.Keywords.Any())
+                    {
+                        must.Add(new MultiMatchQuery {
+                            Fields = new[] { "category^3", "title^2", "description" },
+                            Query = string.Join(" ", intent.Keywords),
+                            Fuzziness = new Fuzziness("AUTO")
+                        });
+                    }
 
-                        // AI-фільтрація за містом
-                        if (!string.IsNullOrWhiteSpace(intent.City))
-                        {
-                            must.Add(new TermQuery(new Field("city.keyword")) { Value = intent.City });
-                        }
+                    // 2. Обов'язкова фільтрація за містом, якщо AI його розпізнав
+                    if (!string.IsNullOrWhiteSpace(intent.City))
+                    {
+                        must.Add(new MatchQuery(new Field("city")) { Query = intent.City, Fuzziness = new Fuzziness("AUTO") });
+                    }
 
-                        b.Must(must.ToArray());
-                    })
-                )
+                    b.Must(must.ToArray());
+                }))
             );
+
+            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
 
             return Ok(response.Documents.Select(d => d.ToDto()));
         }
