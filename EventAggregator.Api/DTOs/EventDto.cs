@@ -22,14 +22,12 @@ namespace EventAggregator.Api.DTOs
     {
         public static EventDto ToDto(this ScrapedEvent e)
         {
-            var rawId = $"{e.Title}_{e.City}_{e.Date}";
-            var bytes = Encoding.UTF8.GetBytes(rawId);
-            
-            var safeId = WebEncoders.Base64UrlEncode(bytes);
+            // 🌟 ВИПРАВЛЕННЯ: Більше ніяких Base64! 
+            // Просто повертаємо чистий DTO зі справжнім системним UUID.
 
             return new EventDto
             {
-                Id = safeId,
+                Id = e.Id, 
                 Title = e.Title,
                 Url = e.Url,
                 Date = e.ParsedDate?.ToString("dd.MM.yyyy HH:mm") ?? e.Date,

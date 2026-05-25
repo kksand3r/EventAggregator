@@ -178,27 +178,14 @@ namespace EventAggregator.Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(string id)
         {
-            // Шукаємо документ строго за системним мета-полем _id за допомогою запиту Ids
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                .Index("events")
-                .Query(q => q
-                        .Ids(i => i.Values(new[] { id })) // 🌟 Запит Ids шукає саме системні ключі
-                )
-                .Size(1)
-            );
+            // Найшвидший пошук за системним мета-полем _id
+            var response = await _client.GetAsync<ScrapedEvent>("events", id);
 
-            if (response.IsValidResponse && response.Hits.Any())
+            if (response.IsValidResponse && response.Source != null)
             {
-                // Отримуємо сирий документ
-                var hit = response.Hits.First();
-                var scrapedEvent = hit.Source;
-
-                if (scrapedEvent != null)
-                {
-                    // Якщо у вашому ToDto() раптом потрібен ID, 
-                    // ви можете дістати його прямо з метаданих: hit.Id
-                    return Ok(scrapedEvent.ToDto());
-                }
+                // Опціонально: якщо ToDto() потребує ID, можна призначити його перед конвертацією
+                // response.Source.Id = response.Id; 
+                return Ok(response.Source.ToDto());
             }
 
             return NotFound();

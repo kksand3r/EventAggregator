@@ -44,11 +44,10 @@ public class ElasticEventRepository : IEventRepository
         if (!eventsList.Any()) return;
 
         var response = await _client.BulkAsync(b => b
-            .Index(IndexName)
-            .IndexMany(eventsList, (descriptor, sEvent) =>
-                descriptor.Id(WebEncoders.Base64UrlEncode(
-                    Encoding.UTF8.GetBytes($"{sEvent.Title}_{sEvent.City}_{sEvent.Date}")))
-            ), ct);
+                .Index(IndexName)
+                // 🌟 ВИПРАВЛЕННЯ: Використовуємо .Id(sEvent.Id) замість Base64
+                .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id)) 
+            , ct);
 
         if (response.IsValidResponse)
             _logger.LogInformation("✅ Успішно збережено {Count} подій.", eventsList.Count);
