@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import {JSX} from "react";
+import { JSX } from "react";
 
 type EmptyType = "search" | "filter" | "generic";
 
@@ -84,7 +84,7 @@ export default function EmptyState({type = "generic", query, onReset}: EmptyStat
 
     return (
         <div
-            className="flex flex-col items-center justify-center py-20 px-6 text-center"
+            className="flex flex-col items-center justify-center py-20 px-6 text-center flex-1"
             style={{animation: "cardAppear 0.4s ease-out both"}}
         >
             <div className="mb-6">

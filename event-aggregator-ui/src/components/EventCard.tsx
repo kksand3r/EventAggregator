@@ -10,7 +10,6 @@ interface EventCardProps {
     index?: number;
 }
 
-// 🌟 ВИПРАВЛЕННЯ: Додано безпечний фолбек для count на випадок undefined
 function formatViewCount(count: number): string {
     if (count === undefined || count === null) return "0";
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
@@ -24,18 +23,30 @@ function getCategoryLabel(event: EventListItem): string {
 }
 
 export default function EventCard({ event, index = 0 }: EventCardProps) {
-    // 🌟 ЗАХИСТ: Якщо об'єкт події з якоїсь причини прийшов порожнім від Elastic
     if (!event) return null;
 
     const delay = Math.min(index * 60, 600);
     const category = getCategoryLabel(event);
-
-    // 🌟 ВИПРАВЛЕННЯ: Безпечне приведення ідентифікатора до рядка
     const eventId = event.id ? event.id.toString() : "";
 
-    // 🌟 ВИПРАВЛЕННЯ: Сумісність мапінгу полів (базова модель C# використовує viewsCount, а DTO - viewCount)
-    // Перевіряємо обидва варіанти назви поля переглядів
     const rawViews = event.viewCount !== undefined ? event.viewCount : ((event as any).viewsCount ?? 0);
+
+    // 🌟 ВИПРАВЛЕННЯ: Повна сумісність мапінгу полів картинки (C# API віддає imageUrl, а DTO/скрапери — image)
+    let imageUrl = event.image || (event as any).imageUrl || "";
+
+    // Автоматично додаємо базовий домен, якщо скрапер повернув відносний шлях типу "/uploads/..."
+    if (imageUrl.startsWith("/")) {
+        if (event.url?.includes("karabas.com")) {
+            imageUrl = `https://karabas.com${imageUrl}`;
+        } else if (event.url?.includes("concert.ua")) {
+            imageUrl = `https://concert.ua${imageUrl}`;
+        }
+    }
+
+    // Якщо картинки взагалі немає в базі, ставимо дефолтний плейсхолдер з папки public
+    if (!imageUrl) {
+        imageUrl = "/placeholder-event.jpg";
+    }
 
     return (
         <Link
@@ -51,44 +62,50 @@ export default function EventCard({ event, index = 0 }: EventCardProps) {
                     animationDelay: `${delay}ms`,
                 }}
             >
-                <div className="absolute inset-0 z-0">
-                    {event.image && (
-                        <Image
-                            src={event.image}
-                            alt=""
-                            fill
-                            priority={index < 4}
-                            className="object-cover blur-[20px] brightness-60 scale-110"
-                        />
-                    )}
+                {/* 1. Блок заднього розмитого фону */}
+                <div className="absolute inset-0 z-0 w-full h-full">
+                    <Image
+                        src={imageUrl}
+                        alt=""
+                        fill
+                        unoptimized
+                        priority={index < 4}
+                        className="object-cover blur-[14px] brightness-[0.45] scale-110 transition-transform duration-500 group-hover:scale-115"
+                    />
                 </div>
 
-                <div className="absolute inset-0 z-10 p-2.5">
-                    {event.image && (
+                {/* 2. Блок центральної картинки з правильним relative-контейнером */}
+                <div className="absolute top-0 left-0 right-0 bottom-[140px] z-10 p-4 flex items-center justify-center">
+                    <div className="relative w-full h-full rounded-xl overflow-hidden">
                         <Image
-                            src={event.image}
-                            alt={event.title || "Event Title"}
+                            src={imageUrl}
+                            alt={event.title || "Event Image"}
                             fill
-                            className="object-contain z-10 transition-transform duration-500 ease-out group-hover:scale-105"
+                            unoptimized // 🌟 Запобігає блокуванню зовнішніх піддоменів (наприклад, images.karabas.com)
+                            className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
                         />
-                    )}
+                    </div>
                 </div>
 
-                <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/40 to-transparent"/>
+                {/* Градієнтне затемнення знизу */}
+                <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none"/>
 
+                {/* Тег категорії */}
                 <div
                     className="absolute top-3 left-3 z-30 bg-white/15 backdrop-blur-md border border-white/25 rounded-md px-2.5 py-1 text-[11px] font-bold text-white tracking-[0.06em] uppercase">
                     {category}
                 </div>
 
+                {/* Кількість переглядів */}
                 <div
                     className="absolute top-3 right-3 z-30 flex items-center gap-1 bg-black/45 backdrop-blur-md border border-white/20 rounded-lg px-2 py-1 text-xs font-semibold text-white">
                     <Eye className="w-[13px] h-[13px]"/>
                     {formatViewCount(rawViews)}
                 </div>
 
-                <div className="relative z-30 p-5 flex flex-col gap-2">
+                {/* Текстова інформація події */}
+                <div className="relative z-30 p-5 flex flex-col gap-2 bg-gradient-to-t from-black/80 to-transparent pt-10">
                     <h3 className="text-[17px] font-bold leading-tight text-white line-clamp-2 m-0 tracking-tight">
                         {event.title || "Без назви"}
                     </h3>
