@@ -7,6 +7,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",
     "@elastic/mcp-server-elasticsearch": "latest",
-    "express": "latest"
+    "express": "latest",
+    "tslib": "latest"
   }
 }

@@ -9,10 +9,10 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
-// Налаштування транспорту для офіційного MCP-сервера Elastic за допомогою stdio всередині контейнера
+// Надійний спосіб запуску: викликаємо безпосередньо встановлений mcp-сервер з node_modules
 const transport = new StdioClientTransport({
     command: "npx",
-    args: ["-y", "@elastic/mcp-server-elasticsearch"],
+    args: ["@elastic/mcp-server-elasticsearch"],
     env: {
         ...process.env,
         ELASTICSEARCH_URL: ELASTIC_URL
@@ -26,26 +26,25 @@ const mcpClient = new Client({
     capabilities: {}
 });
 
-// Підключаємось до MCP сервера Elastic при старті
-await mcpClient.connect(transport);
-console.log("🚀 Connected to Elastic MCP Server successfully");
+try {
+    await mcpClient.connect(transport);
+    console.log("🚀 Connected to Elastic MCP Server successfully");
+} catch (err) {
+    console.error("❌ Failed to connect to MCP Server during startup:", err);
+}
 
 app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
         if (!query) return res.status(400).json({ error: "Query is required" });
 
-        // 1. Отримуємо список динамічних інструментів від MCP сервера Elastic
         const mcpTools = await mcpClient.listTools();
-
-        // 2. Трансформуємо інструменти MCP у формат Function Declarations для Gemini
         const functionDeclarations = mcpTools.tools.map(tool => ({
             name: tool.name,
             description: tool.description,
             parameters: tool.inputSchema
         }));
 
-        // 3. Перший запит до Gemini: передаємо запит користувача та опис доступних інструментів Elastic
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
         let geminiRequestBody = {
@@ -64,16 +63,10 @@ app.post('/api/mcp-search', async (req, res) => {
         let candidate = jsonResponse.candidates?.[0];
         let part = candidate?.content?.parts?.[0];
 
-        // Якщо Gemini вирішив викликати інструмент MCP (Elasticsearch)
         if (part?.functionCall) {
             const { name, args } = part.functionCall;
-            console.log(`[MCP Action]: Gemini calls tool '${name}' with args:`, args);
-
-            // Викликаємо інструмент безпосередньо через офіційний MCP-сервер
             const toolResult = await mcpClient.callTool({ name, arguments: args });
-            console.log(`[MCP Result]: Data retrieved from Elasticsearch`);
 
-            // 4. Другий запит до Gemini (RAG крок): повертаємо результат виконання інструменту назад у модель
             const finalRequestBody = {
                 contents: [
                     { role: "user", parts: [{ text: query }] },
@@ -101,11 +94,10 @@ app.post('/api/mcp-search', async (req, res) => {
 
             return res.json({
                 agentMessage: finalTxt,
-                rawMcpData: toolResult.content // Сирі дані з Elastic для фронтенд-карток
+                rawMcpData: toolResult.content
             });
         }
 
-        // Якщо модель відповіла відразу без виклику інструментів
         return res.json({
             agentMessage: part?.text || "Не вдалося отримати аналіз.",
             rawMcpData: []
@@ -118,4 +110,4 @@ app.post('/api/mcp-search', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => console.log(`Bridge microservice running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Bridge microservice running on port ${PORT}`));
