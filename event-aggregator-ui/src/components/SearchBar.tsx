@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Search, Sparkles, Loader2, Calendar, MapPin, List, X, Bot } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link"; // 🌟 Обов'язково додаємо імпорт Link
 import { fetchAiSearchSuggestions, AiSearchResponse } from "@/lib/api";
 
 interface SearchBarProps {
@@ -21,7 +22,6 @@ export default function SearchBar({
     const [localValue, setLocalValue] = useState(externalValue);
     const [searchMode, setSearchMode] = useState<'ai' | 'classic'>('ai');
 
-    // Стейт для збереження повної структурованої відповіді від MCP-агента
     const [aiResponse, setAiResponse] = useState<AiSearchResponse>({ agentMessage: "", events: [] });
     const [isLoading, setIsLoading] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
@@ -69,8 +69,6 @@ export default function SearchBar({
             try {
                 const result = await fetchAiSearchSuggestions(localValue);
                 setAiResponse(result);
-
-                // Відображаємо меню, якщо ШІ повернув текст відповіді АБО знайшов картки подій
                 setShowDropdown(Boolean(result.agentMessage) || result.events.length > 0);
             } catch (error) {
                 console.error("AI Search Error:", error);
@@ -162,24 +160,23 @@ export default function SearchBar({
             {/* Випадаюче вікно ШІ Рекомендацій */}
             {searchMode === 'ai' && showDropdown && (aiResponse.agentMessage || aiResponse.events.length > 0) && (
                 <div
-                    className="absolute top-14 left-0 right-0 bg-white/98 backdrop-blur-[25px] rounded-3xl p-4 border border-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] z-[100] flex flex-col gap-4">
+                    className="absolute top-14 left-0 right-0 bg-white/98 backdrop-blur-[25px] rounded-3xl p-4 border border-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] z-[100] flex flex-col gap-4 max-h-[450px] overflow-y-auto">
 
                     {/* Текстова відповідь від ШІ Агента */}
                     {aiResponse.agentMessage && (
                         <div className="bg-gradient-to-br from-[#7c4dff]/8 to-[#5a4fa0]/4 rounded-2xl p-4 border border-[#7c4dff]/15">
-                            <div className="flex items-center gap-2 mb-1.5">
+                            <div className="flex items-center gap-2 mb-2">
                                 <Bot className="w-4 h-4 text-[#7c4dff]"/>
                                 <span className="text-[11px] font-bold text-[#7c4dff] uppercase tracking-wider">
                                     AI Асистент
                                 </span>
                             </div>
-                            <p className="text-sm text-[#1a1535]/90 leading-relaxed font-medium">
-                                {aiResponse.agentMessage}
-                            </p>
+                            {/* 🌟 ЗАМІСТЬ СИРОГО ТЕКСТУ ВИКЛИКАЄМО НАШ ПАРСЕР ПОСИЛАНЬ */}
+                            <RenderAiDropdownMessage text={aiResponse.agentMessage} />
                         </div>
                     )}
 
-                    {/* Картки релевантних подій, знайдені за допомогою MCP-сервера */}
+                    {/* Картки релевантних подій нижче під текстом */}
                     {aiResponse.events.length > 0 && (
                         <div>
                             <div className="flex items-center gap-2 px-1 mb-2">
