@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchArchiveEvents, type EventListItem } from "@/lib/api";
 import EventCard from "@/components/EventCard";
 import Pagination from "@/components/Pagination";
-import EmptyState from "@/components/EmptyState"; 
+import EmptyState from "@/components/EmptyState";
 import { Loader2, Archive } from "lucide-react";
 
 export default function ArchiveTab() {
@@ -36,11 +36,11 @@ export default function ArchiveTab() {
         </div>
     );
 
-    // 🌟 Якщо подій немає, центруємо інтерфейс та виводимо англійський EmptyState
+    // 🌟 ВИПРАВЛЕННЯ: Використовуємо правильний generic стан для порожнього архіву
     if (events.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center flex-1 py-12 text-center">
-                <EmptyState type="search" query="archived events" />
+                <EmptyState type="generic" />
             </div>
         );
     }
