@@ -161,6 +161,7 @@ const CATEGORY_MAP = {
     "inshe": "inshe", "інше": "inshe",
 };
 
+
 function extractContext(query) {
     const lower = query.toLowerCase();
 
@@ -183,13 +184,12 @@ function extractContext(query) {
         }
     }
 
-    const isRomantic = ROMANTIC_KEYWORDS.some(kw => lower.includes(kw));
 
     // Витягуємо бажану кількість результатів якщо юзер написав число
     const sizeMatch = lower.match(/(\d+)\s*(концерт|поді|варіант|захід|театр|вистав)/);
     const size = sizeMatch ? Math.min(parseInt(sizeMatch[1]), 20) : 20;
 
-    return { city, category, isRomantic, size };
+    return { city, category, size };
 }
 
 
@@ -203,9 +203,9 @@ app.post('/api/mcp-search', async (req, res) => {
         if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
 
         // ✅ Детермінована нормалізація — до Gemini навіть не доходить ця логіка
-        const { city, category, isRomantic, size } = extractContext(query);
+        const { city, category, size } = extractContext(query);
 
-        console.log(`[Context extracted] city=${city}, category=${category}, romantic=${isRomantic}, size=${size}`);
+        console.log(`[Context extracted] city=${city}, category=${category}, size=${size}`);
 
         // Формуємо чіткі інструкції для Gemini на основі того що вже знайшли
         const cityInstruction = city
@@ -214,9 +214,7 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const categoryInstruction = category
             ? `Категорія визначена автоматично: використовуй ТОЧНЕ значення "${category}" для term-фільтра по "category.keyword".`
-            : isRomantic
-                ? `Категорія не вказана, але запит романтичний — шукай серед "theatres" та "concerts", вони найкраще підходять для побачення.`
-                : `Категорія не вказана — шукай по всіх категоріях, використовуй ключові слова з запиту для пошуку по "title" та "description".`;
+            : `Категорія не вказана — шукай по всіх категоріях, використовуй ключові слова з запиту для пошуку по "title" та "description".`;
 
         const mcpTools = await mcpClient.listTools();
         const functionDeclarations = mcpTools.tools.map(tool => ({
