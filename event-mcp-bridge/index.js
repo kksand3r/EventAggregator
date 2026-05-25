@@ -2,7 +2,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -13,11 +13,16 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
-// 🌟 ВИПРАВЛЕННЯ: Підключаємо наш файл patch-elastic.js примусово через аргумент Node.js
+// 🌟 ВИПРАВЛЕННЯ: Генеруємо точний абсолютний file:// URL для Node.js ESM імпорту
+const patchPath = path.resolve(__dirname, 'patch-elastic.js');
+const patchUrl = pathToFileURL(patchPath).href;
+
+console.log(`[MCP Bridge] Injecting patch from: ${patchUrl}`);
+
 const transport = new StdioClientTransport({
     command: "node",
     args: [
-        "--import", path.join(__dirname, "./patch-elastic.js"), // Інжектуємо фікс сумісності заголовків
+        "--import", patchUrl, // Передаємо як file:///app/patch-elastic.js
         "./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"
     ],
     env: {
@@ -83,7 +88,7 @@ app.post('/api/mcp-search', async (req, res) => {
         let conversationHistory = [
             {
                 role: "user",
-                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Обмежуй параметри 'size' до максимум 5-10 результатів.` }]
+                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Завжди обмежуй параметр size до максимум 5-10 результатів.` }]
             }
         ];
 
