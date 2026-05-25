@@ -11,29 +11,24 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
 // =====================================================================
-// 🛡️ СУПЕР-НАДІЙНИЙ HTTP-ПРОКСІ ДЛЯ КОРЕКЦІЇ ЗАГОЛОВКІВ ELASTIC
+// 🛡️ ВНУТРІШНІЙ HTTP-ПРОКСІ ДЛЯ КОРЕКЦІЇ ЗАГОЛОВКІВ (Fix compatible-with=9)
 // =====================================================================
 const PROXY_PORT = 9292;
 const proxy = http.createServer((req, res) => {
     const targetUrl = new URL(ELASTIC_URL);
-    const proxyHeaders = {};
 
-    // Переводимо всі заголовки в нижній регістр та чистим "compatible-with=9"
-    for (const [key, value] of Object.entries(req.headers)) {
-        const lowerKey = key.toLowerCase();
-        if (typeof value === 'string') {
-            proxyHeaders[lowerKey] = value.replace(/compatible-with=9/g, 'compatible-with=8');
-        } else {
-            proxyHeaders[lowerKey] = value;
-        }
-    }
+    // Клонуємо вхідні заголовки
+    const proxyHeaders = { ...req.headers };
 
-    // Примусово перевизначаємо Host та скидаємо заголовки сумісності на стандартний JSON
+    // Перевизначаємо host, щоб Elasticsearch коректно обробляв маршрутизацію
     proxyHeaders.host = targetUrl.host;
-    proxyHeaders['accept'] = 'application/json';
-    if (proxyHeaders['content-type'] && proxyHeaders['content-type'].includes('application/vnd.elasticsearch')) {
-        proxyHeaders['content-type'] = 'application/json';
-    }
+
+    // Примусово замінюємо версію сумісності 9 на 8 у заголовках Accept та Content-Type
+    ['accept', 'content-type'].forEach(header => {
+        if (proxyHeaders[header] && typeof proxyHeaders[header] === 'string' && proxyHeaders[header].includes('compatible-with=9')) {
+            proxyHeaders[header] = proxyHeaders[header].replace('compatible-with=9', 'compatible-with=8');
+        }
+    });
 
     const options = {
         hostname: targetUrl.hostname,
@@ -43,6 +38,7 @@ const proxy = http.createServer((req, res) => {
         headers: proxyHeaders
     };
 
+    // Перенаправляємо запит до справжнього контейнера Elasticsearch
     const proxyReq = http.request(options, (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res);
@@ -56,21 +52,24 @@ const proxy = http.createServer((req, res) => {
         }
     });
 
-    req.pipe(proxyReq);
+    req.pipe(proxyReq); // Пересилаємо тіло запиту (наприклад, JSON-тіло пошуку)
 });
 
+// Запускаємо проксі на локальному хості контейнера
 proxy.listen(PROXY_PORT, '127.0.0.1', () => {
-    console.log(`🛡️  Internal Elastic Proxy running on http://127.0.0.1:${PROXY_PORT}`);
+    console.log(`🛡️  Internal Elastic Proxy successfully running on 127.0.0.1:${PROXY_PORT}`);
 });
+
 
 // =====================================================================
-// 🚀 MCP КЛІЄНТ ТА ТРАНСПОРТ
+// 🚀 ІНІЦІАЛІЗАЦІЯ MCP КЛІЄНТА ТА ТРАНСПОРТУ
 // =====================================================================
 const transport = new StdioClientTransport({
     command: "node",
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
     env: {
         ...process.env,
+        // Направляємо MCP-сервер Elastic на наш проксі
         ES_URL: `http://127.0.0.1:${PROXY_PORT}`
     }
 });
@@ -83,6 +82,7 @@ const mcpClient = new Client({
 });
 
 let isConnected = false;
+
 try {
     await mcpClient.connect(transport);
     isConnected = true;
@@ -108,13 +108,15 @@ function cleanSchema(schema) {
     return cleaned;
 }
 
+
 // =====================================================================
-// 🧠 МІСТ ДЛЯ ЗАПИТІВ ШІ (AI SEARCH)
+// 🧠 API ДЛЯ ОБРОБКИ ЗАПИТІВ (AI SEARCH)
 // =====================================================================
 app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
         if (!query) return res.status(400).json({ error: "Query is required" });
+
         if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
 
         const mcpTools = await mcpClient.listTools();
@@ -126,7 +128,7 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        // Нові суворі правила: Пошук МІСТА КАПСОМ + Генерація посилань Markdown
+        // Контекст діалогу з суворими інструкціями для мови та лімітів
         let conversationHistory = [
             {
                 role: "user",
@@ -134,21 +136,18 @@ app.post('/api/mcp-search', async (req, res) => {
 Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". 
 
 СУВОРІ ПРАВИЛА ДЛЯ ФОРМУВАННЯ ЗАПИТУ В ELASTICSEARCH:
-1. Завжди переводь назву міста у ВЕЛИКІ ЛІТЕРИ (наприклад, замість "Миколаїв" шукай "МИКОЛАЇВ", замість "Київ" шукай "КИЇВ"). Це критично для вашого індексу, інакше база поверне 0 результатів!
-2. Пиши умови пошуку українською мовою. Обмежуй параметр 'size' до максимум 5 результатів.
-3. Зроби виклик інструменту пошуку лише ОДИН РАЗ за сесію. Якщо нічого не знайдено — не повторюй пошук.
-
-ПРАВИЛО ФОРМУВАННЯ ФІНАЛЬНОЇ ВІДПОВІДІ (agentMessage):
-Якщо інструмент пошуку знайшов події в базі даних, обов'язково оформлюй кожну знайдену подію у тексті як клікабельне Markdown-посилання, використовуючи точний URL з поля 'url' або 'Url' знайденого документа!
-Формат посилання: [Назва події - Дата](URL події)
-Наприклад: "Я знайшов такі події: ви можете відвідати [Концерт Океан Ельзи - 30 Травня](https://concert.ua/uk/event/...) у Миколаєві."
-                ` }]
+1. Завжди переводи назву міста у ВЕЛИКІ ЛІТЕРИ (наприклад, замість "Миколаїв" пиши "МИКОЛАЇВ", замість "Київ" пиши "КИЇВ"). Це критично для пошуку!
+2. Для пошуку використовуй просту текстову фразу українською мовою через параметр "query" (наприклад: "концерти МИКОЛАЇВ"), не будуй занадто складні вкладені bool-структури, якщо інструмент дозволяє простий пошук.
+3. Категорії в базі можуть бути записані як у множині, так і в однині (наприклад, "концерти" або "концерт"), враховуй це.
+4. Зроби виклик інструменту пошуку лише ОДИН РАЗ за сесію. Обмежуй параметр 'size' до 5.
+5. Якщо інструмент пошуку повернув порожній результат, одразу відповідай користувачу, що подій не знайдено.
+        ` }]
             }
         ];
 
         let lastMcpData = [];
         let loopCount = 0;
-        const MAX_LOOPS = 4;
+        const MAX_LOOPS = 4; // Захист від нескінченних повторних спроб ШІ
 
         while (loopCount < MAX_LOOPS) {
             loopCount++;
@@ -166,9 +165,13 @@ app.post('/api/mcp-search', async (req, res) => {
             });
 
             let jsonResponse = await response.json();
+
             if (jsonResponse.error) {
                 console.error("❌ Gemini API Error:", jsonResponse.error);
-                return res.json({ agentMessage: `Помилка ШІ: ${jsonResponse.error.message}`, rawMcpData: lastMcpData });
+                return res.json({
+                    agentMessage: `Виникла помилка ШІ: ${jsonResponse.error.message}`,
+                    rawMcpData: lastMcpData
+                });
             }
 
             console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.stringify(jsonResponse, null, 2));
@@ -179,9 +182,10 @@ app.post('/api/mcp-search', async (req, res) => {
                 conversationHistory.push(candidate.content);
             }
 
+            // Якщо модель ініціює виклик інструменту Elastic
             if (part?.functionCall) {
                 const { name, args } = part.functionCall;
-                console.log(`[Executing Tool via Fixed Proxy]: ${name}`, args);
+                console.log(`[Executing Tool via Proxy]: ${name} with args:`, args);
 
                 try {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
@@ -192,36 +196,44 @@ app.post('/api/mcp-search', async (req, res) => {
                         parts: [{
                             functionResponse: {
                                 name: name,
-                                response: { output: JSON.stringify(toolResult.content) }
+                                response: { result: toolResult.content }
                             }
                         }]
                     });
                 } catch (toolError) {
-                    console.error(`❌ [Tool Error]: ${toolError.message}`);
+                    console.error(`❌ [Tool Execution Error]: ${toolError.message}`);
                     conversationHistory.push({
                         role: "user",
-                        parts: [{ functionResponse: { name: name, response: { error: toolError.message } } }]
+                        parts: [{
+                            functionResponse: {
+                                name: name,
+                                response: { error: toolError.message }
+                            }
+                        }]
                     });
                 }
+
                 continue;
             }
 
+            // Якщо модель повернула фінальну текстову відповідь для користувача
             if (part?.text) {
                 return res.json({
                     agentMessage: part.text,
                     rawMcpData: lastMcpData
                 });
             }
+
             break;
         }
 
         return res.json({
-            agentMessage: "Я перевірив базу даних подій. Будь ласка, ознайомтеся зі списком знайдених результатів нижче.",
+            agentMessage: "Я перевірив базу даних подій. Будь ласка, ознайомтеся зі знайденими результатами нижче.",
             rawMcpData: lastMcpData
         });
 
     } catch (error) {
-        console.error("[Bridge Error]:", error.message);
+        console.error("[Bridge Error] Message:", error.message);
         res.status(500).json({ error: error.message });
     }
 });
