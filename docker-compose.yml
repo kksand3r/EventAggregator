@@ -23,7 +23,8 @@ services:
     container_name: event_mcp_bridge
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=gemini-1.5-flash
+      - GEMINI_MODEL=gemini-flash-lite-latest
+
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - PORT=5001
     ports:
