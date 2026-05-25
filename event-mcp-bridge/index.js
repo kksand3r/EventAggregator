@@ -104,8 +104,12 @@ app.post('/api/mcp-search', async (req, res) => {
         });
 
     } catch (error) {
-        console.error("[Bridge Error]:", error);
-        res.status(500).json({ error: error.message });
+        console.error("[Bridge Error] Message:", error.message);
+        console.error("[Bridge Error] Stack:", error.stack);
+        res.status(500).json({
+            error: error.message,
+            stack: error.stack // тимчасово для debug
+        });
     }
 });
 
