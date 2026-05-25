@@ -1,9 +1,10 @@
 ﻿using System.Text;
 using Elastic.Clients.Elasticsearch;
+using Elastic.Clients.Elasticsearch.QueryDsl;
 using EventAggregator.Domain.Interfaces;
 using EventAggregator.Domain.Models;
 using Microsoft.Extensions.Logging;
-using Microsoft.AspNetCore.WebUtilities; 
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace EventAggregator.Infrastructure.Repository;
 
@@ -42,5 +43,48 @@ public class ElasticEventRepository : IEventRepository
             _logger.LogInformation("✅ Успішно синхронізовано з Elasticsearch.");
         else
             _logger.LogError("❌ Помилка Elasticsearch: {Error}", response.DebugInformation);
+    }
+
+    public async Task<IEnumerable<ScrapedEvent>> SearchEventsAsync(string? query, string? city, int size = 10, CancellationToken ct = default)
+    {
+        var mustQueries = new List<Query>();
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            mustQueries.Add(new MultiMatchQuery
+            {
+                Query = query,
+                Fields = new[] { "title^3", "description" },
+                Fuzziness = new Fuzziness("AUTO")
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(city))
+        {
+            mustQueries.Add(new MatchQuery(new Field("city"))
+            {
+                Query = city
+            });
+        }
+
+        // Якщо жодного фільтра не вказано, отримуємо всі події
+        var searchDescriptor = new SearchRequestDescriptor<ScrapedEvent>()
+            .Index(IndexName)
+            .Size(size);
+
+        if (mustQueries.Any())
+        {
+            searchDescriptor.Query(q => q.Bool(b => b.Must(mustQueries)));
+        }
+
+        var response = await _client.SearchAsync<ScrapedEvent>(searchDescriptor, ct);
+
+        if (!response.IsValidResponse)
+        {
+            _logger.LogError("❌ Помилка пошуку Elasticsearch: {Error}", response.DebugInformation);
+            return Enumerable.Empty<ScrapedEvent>();
+        }
+
+        return response.Documents;
     }
 }
