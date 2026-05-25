@@ -27,10 +27,10 @@ namespace EventAggregator.Application.Services
         {
             try
             {
-                var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-004:embedContent?key={_apiKey}";
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={_apiKey}";
                 var requestBody = new
                 {
-                    model = "models/gemini-embedding-004",
+                    model = "models/text-embedding-004",
                     content = new { parts = new[] { new { text } } }
                 };
                 var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
