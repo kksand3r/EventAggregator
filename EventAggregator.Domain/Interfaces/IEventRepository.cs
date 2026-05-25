@@ -8,5 +8,4 @@ public interface IEventRepository
     
     Task EnsureIndexCreatedAsync(CancellationToken ct);
     
-    Task<IEnumerable<ScrapedEvent>> SearchEventsAsync(string? query, string? city, int size = 10, CancellationToken ct = default);
 }
