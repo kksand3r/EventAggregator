@@ -1,4 +1,4 @@
-﻿using System.Text;
+﻿﻿using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using EventAggregator.Domain.Models;
@@ -27,21 +27,21 @@ namespace EventAggregator.Application.Services
             var systemPrompt =
                 "Ти — аналітичний асистент платформи EventSpace. Твоє завдання — зробити стисле (до 200 символів) " +
                 "резюме події на основі опису. ПИШИ СУВОРО: без емодзі, без знаків оклику, без рекламних закликів " +
-                "та без звертань до користувача. Tільки головна суть у 1-2 реченнях.";
+                "та без звертань до користувача. Тільки головна суть у 1-2 реченнях.";
 
             var requestBody = new
             {
                 contents = new[]
                 {
-                    // Виправлено: передаємо назву події (title) та її опис (description) замість неіснуючого userPrompt
-                    new { parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } } }
+                    new
+                    {
+                        parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } }
+                    }
                 },
-                generationConfig = new { temperature = 0.2, maxOutputTokens = 150 }
+                generationConfig = new { temperature = 0.4, maxOutputTokens = 150 }
             };
 
-            // Виправлено: викликаємо приватний метод з контекстом "SummarizeEvent"
-            // Він поверне чистий рядок тексту, згенерований штучним інтелектом
-            return await SendGeminiRequest(requestBody, "SummarizeEvent");
+            return await SendGeminiRequest(requestBody, "Summarize");
         }
 
         public async Task<AiSearchIntent> GetSearchIntentAsync(string userPrompt)
@@ -172,23 +172,25 @@ namespace EventAggregator.Application.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    var details = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[Gemini Error - {context}] Status: {response.StatusCode}, Details: {details}");
+                    var error = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"[Gemini Error - {context}] Status: {response.StatusCode}, Details: {error}");
                     return "Тимчасово не вдалося завантажити AI-аналіз.";
                 }
 
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
 
-                return doc.RootElement
+                var result = doc.RootElement
                     .GetProperty("candidates")[0]
                     .GetProperty("content")
                     .GetProperty("parts")[0]
-                    .GetProperty("text").GetString() ?? "";
+                    .GetProperty("text").GetString();
+
+                return result?.Trim().Trim('"').Trim('«').Trim('»') ?? "";
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Gemini Exception - {context}] {ex.Message}");
+                Console.WriteLine($"[Gemini Exception - {context}] Message: {ex.Message}");
                 return "Помилка системи AI.";
             }
         }
