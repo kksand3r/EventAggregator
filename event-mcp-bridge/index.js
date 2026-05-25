@@ -17,32 +17,19 @@ const mcpClient = new Client({
     capabilities: {}
 });
 
-let isConnected = false;
+// Глобальний перехоплювач помилок, щоб контейнер ніколи не падав
+process.on('uncaughtException', (err) => {
+    console.error('💥 Помилка середовища:', err);
+});
 
-try {
-    await mcpClient.connect(transport);
-    isConnected = true;
-    console.log("🚀 Connected to Elastic MCP Server successfully");
-} catch (err) {
-    console.error("❌ Failed to connect to MCP Server during startup:", err);
-}
-
-// Очищаємо схему від полів які Gemini не підтримує
-function cleanSchema(schema) {
-    if (!schema || typeof schema !== 'object') return schema;
-
-    const forbidden = ['$schema', 'additionalProperties'];
-    const cleaned = {};
-
-    for (const [key, value] of Object.entries(schema)) {
-        if (forbidden.includes(key)) continue;
-        if (Array.isArray(value)) {
-            cleaned[key] = value.map(item => cleanSchema(item));
-        } else if (typeof value === 'object') {
-            cleaned[key] = cleanSchema(value);
-        } else {
-            cleaned[key] = value;
-        }
+// Даємо серверу 2 секунди впевнено піднятися перед підключенням клієнта
+setTimeout(async () => {
+    try {
+        console.log("⏳ Встановлюємо зв'язок з Elastic MCP через SSE...");
+        await mcpClient.connect(transport);
+        console.log("🚀 Успішно підключено до Elastic MCP протоколу!");
+    } catch (err) {
+        console.error("❌ Помилка з'єднання протоколу MCP:", err);
     }
 }, 2000);
 
