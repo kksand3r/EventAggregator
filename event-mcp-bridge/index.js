@@ -14,7 +14,9 @@ const transport = new StdioClientTransport({
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
     env: {
         ...process.env,
-        ES_URL: ELASTIC_URL
+        ES_URL: ELASTIC_URL,
+        ELASTICSEARCH_COMPATIBLE_WITH: "8",            // Емулюємо сумісність з 8 версією
+        ELASTIC_CLIENT_APIVERSIONCHECKING: "false"
     }
 });
 
