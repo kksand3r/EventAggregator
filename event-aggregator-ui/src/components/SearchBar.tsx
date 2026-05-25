@@ -187,7 +187,6 @@ export default function SearchBar({
                     onFocus={() => {
                         if (aiResponse.agentMessage || aiResponse.events.length > 0) setShowDropdown(true);
                     }}
-                    {/* 🌟 ОНОВЛЕНО: Тепер текст підказки змінюється на 100% логічно відповідно до обраного типу */}
                     placeholder={
                         searchMode === 'ai'
                             ? "Запитайте ШІ (наприклад: куди піти з дівчиною?)..."
