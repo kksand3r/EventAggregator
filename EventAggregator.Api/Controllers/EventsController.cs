@@ -19,51 +19,34 @@ namespace EventAggregator.Api.Controllers
         }
 
         [HttpGet("ai-search")]
-        public async Task<IActionResult> AiSearch([FromQuery] string? query, [FromServices] GeminiService gemini,
-            [FromQuery] int size = 5)
+        public async Task<IActionResult> AiSearch([FromQuery] string? query, [FromServices] GeminiService gemini, [FromQuery] int size = 5)
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return Ok(Enumerable.Empty<EventDto>());
+            if (string.IsNullOrWhiteSpace(query)) return Ok(Enumerable.Empty<EventDto>());
 
             var intent = await gemini.GetSearchIntentAsync(query);
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .Size(size)
-                .Query(q => q
-                    .Bool(b =>
-                    {
-                        if (!string.IsNullOrWhiteSpace(intent.City))
-                        {
-                            b.Filter(f => f.Term(t => t.Field("city").Value(intent.City.ToUpper())));
-                        }
+                .Query(q => q.Bool(b =>
+                {
+                    if (!string.IsNullOrWhiteSpace(intent.City))
+                        b.Filter(f => f.Term(t => t.Field("city.keyword").Value(intent.City.ToUpper())));
 
-                        if (!string.IsNullOrWhiteSpace(intent.Category))
-                        {
-                            b.Filter(f => f.Term(t => t.Field("category").Value(intent.Category.ToLower())));
-                        }
+                    if (!string.IsNullOrWhiteSpace(intent.Category))
+                        b.Filter(f => f.Term(t => t.Field("category.keyword").Value(intent.Category.ToLower())));
 
-                        if (!string.IsNullOrWhiteSpace(intent.Keywords))
-                        {
-                            b.Must(m => m.MultiMatch(mm => mm
-                                .Fields(new[] { "title^2", "description" })
-                                .Query(intent.Keywords)
-                                .Fuzziness(new Fuzziness("AUTO"))
-                            ));
-                        }
-                    })
-                )
+                    if (!string.IsNullOrWhiteSpace(intent.Keywords))
+                        b.Must(m => m.MultiMatch(mm => mm.Fields(new[] { "title^2", "description" }).Query(intent.Keywords).Fuzziness(new Fuzziness("AUTO"))));
+                }))
             );
 
-            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
-
-            return Ok(response.Documents.Select(d => d.ToDto()));
+            return response.IsValidResponse ? Ok(response.Documents.Select(d => d.ToDto())) : StatusCode(500, response.DebugInformation);
         }
 
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return Ok(Enumerable.Empty<EventDto>());
+            if (string.IsNullOrWhiteSpace(query)) return Ok(Enumerable.Empty<EventDto>());
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .Size(size)
@@ -75,10 +58,7 @@ namespace EventAggregator.Api.Controllers
                 ))
             );
 
-            if (!response.IsValidResponse)
-                return StatusCode(500, response.DebugInformation);
-
-            return Ok(response.Documents.Select(d => d.ToDto()));
+            return response.IsValidResponse ? Ok(response.Documents.Select(d => d.ToDto())) : StatusCode(500, response.DebugInformation);
         }
 
         [HttpGet("{id}/ai-summary")]
@@ -87,123 +67,77 @@ namespace EventAggregator.Api.Controllers
             var response = await _client.GetAsync<ScrapedEvent>("events", id);
 
             if (!response.IsValidResponse || response.Source == null)
-            {
-                return NotFound(new { Message = $"Подію з ID {id} не знайдено для аналізу." });
-            }
+                return NotFound(new { Message = $"Подію з ID {id} не знайдено." });
 
-            var summary = await gemini.SummarizeEventAsync(
-                response.Source.Title,
-                response.Source.Description
-            );
-
+            var summary = await gemini.SummarizeEventAsync(response.Source.Title, response.Source.Description);
             return Ok(new { Summary = summary });
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll(
-            [FromQuery] string? city,
-            [FromQuery] string? category,
-            [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> GetAll([FromQuery] string? city, [FromQuery] string? category, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             int from = (page - 1) * pageSize;
             var now = DateTime.UtcNow;
-
-            var filters = new List<Action<QueryDescriptor<ScrapedEvent>>>();
-
-            filters.Add(f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now))));
-
-            if (!string.IsNullOrWhiteSpace(city) && city != "All")
-            {
-                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToUpper())));
-            }
-
-            if (!string.IsNullOrWhiteSpace(category) && category != "All")
-            {
-                filters.Add(f => f.Term(t => t.Field("category").Value(category.ToLower())));
-            }
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .From(from)
                 .Size(pageSize)
                 .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Asc)))
-                .Query(q => q
-                    .Bool(b => b.Filter(filters.ToArray()))
-                )
+                .Query(q => q.Bool(b =>
+                {
+                    b.Filter(f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now))));
+                    
+                    if (!string.IsNullOrWhiteSpace(city) && city != "All")
+                        b.Filter(f => f.Term(t => t.Field("city.keyword").Value(city.ToUpper())));
+                    
+                    if (!string.IsNullOrWhiteSpace(category) && category != "All")
+                        b.Filter(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
+                }))
             );
 
-            if (!response.IsValidResponse)
-                return StatusCode(500, response.DebugInformation);
-
-            return Ok(new
-            {
-                Total = response.Total,
-                Page = page,
-                PageSize = pageSize,
-                Data = response.Documents.Select(d => d.ToDto())
-            });
+            return response.IsValidResponse 
+                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) }) 
+                : StatusCode(500, response.DebugInformation);
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(string id)
         {
             var response = await _client.GetAsync<ScrapedEvent>("events", id);
-
-            if (!response.IsValidResponse || response.Source == null)
-            {
-                return NotFound(new { Message = $"Подію з ID {id} не знайдено." });
-            }
-
-            return Ok(response.Source.ToDto());
+            return (response.IsValidResponse && response.Source != null) ? Ok(response.Source.ToDto()) : NotFound();
         }
 
         [HttpGet("metadata")]
         public async Task<IActionResult> GetMetadata()
         {
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                .Index("events")
-                .Size(0)
-                .Aggregations(a => a
-                    .Add("unique_cities", ag => ag.Terms(t => t.Field("city.keyword").Size(100)))
-                    .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
-                )
-            );
+            var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
+                .Add("unique_cities", ag => ag.Terms(t => t.Field("city.keyword").Size(100)))
+                .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
+            ));
 
-            if (!response.IsValidResponse)
-                return StatusCode(500, response.DebugInformation);
+            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
 
-            var metadata = new EventMetadataDto();
-            var cityBucket = response.Aggregations.GetStringTerms("unique_cities");
-            var categoryBucket = response.Aggregations.GetStringTerms("unique_categories");
-
-            if (cityBucket != null) metadata.Cities = cityBucket.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList();
-            if (categoryBucket != null) metadata.Categories = categoryBucket.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList();
-
-            return Ok(metadata);
+            return Ok(new EventMetadataDto
+            {
+                Cities = response.Aggregations.GetStringTerms("unique_cities")?.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList() ?? new(),
+                Categories = response.Aggregations.GetStringTerms("unique_categories")?.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList() ?? new()
+            });
         }
 
         [HttpGet("stats")]
         public async Task<IActionResult> GetStats()
         {
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                .Index("events")
-                .Size(0)
-                .Aggregations(a => a
-                    .Add("events_by_city", ag => ag.Terms(t => t.Field("city.keyword").Size(10)))
-                    .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
-                )
-            );
+            var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
+                .Add("events_by_city", ag => ag.Terms(t => t.Field("city.keyword").Size(10)))
+                .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
+            ));
 
-            if (!response.IsValidResponse)
-                return StatusCode(500, response.DebugInformation);
-
-            var cityBucket = response.Aggregations.GetStringTerms("events_by_city");
-            var categoryBucket = response.Aggregations.GetStringTerms("events_by_category");
+            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
 
             return Ok(new
             {
-                ByCity = cityBucket?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new Dictionary<string, long>(),
-                ByCategory = categoryBucket?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new Dictionary<string, long>()
+                ByCity = response.Aggregations.GetStringTerms("events_by_city")?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new(),
+                ByCategory = response.Aggregations.GetStringTerms("events_by_category")?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new()
             });
         }
 
@@ -212,18 +146,14 @@ namespace EventAggregator.Api.Controllers
         {
             var request = new UpdateRequest<ScrapedEvent, ScrapedEvent>("events", id)
             {
-                Script = new Script(new InlineScript(
-                    "if (ctx._source.viewsCount == null) { ctx._source.viewsCount = 1 } else { ctx._source.viewsCount += 1 }"))
+                Script = new Script(new InlineScript("if (ctx._source.viewsCount == null) { ctx._source.viewsCount = 1 } else { ctx._source.viewsCount += 1 }"))
             };
-
             var response = await _client.UpdateAsync(request);
             return response.IsValidResponse ? Ok() : StatusCode(500, response.DebugInformation);
         }
         
         [HttpGet("archive")]
-        public async Task<IActionResult> GetArchive(
-            [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> GetArchive([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             int from = (page - 1) * pageSize;
             var now = DateTime.UtcNow;
@@ -232,23 +162,14 @@ namespace EventAggregator.Api.Controllers
                 .From(from)
                 .Size(pageSize)
                 .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Desc)))
-                .Query(q => q
-                    .Bool(b => b
-                        .Filter(f => f.Range(r => r.DateRange(dr => dr.Field(f => f.ParsedDate).Lt(now))))
-                    )
-                )
+                .Query(q => q.Bool(b => b
+                    .Filter(f => f.Range(r => r.DateRange(dr => dr.Field(f => f.ParsedDate).Lt(now))))
+                ))
             );
 
-            if (!response.IsValidResponse)
-                return StatusCode(500, response.DebugInformation);
-
-            return Ok(new
-            {
-                Total = response.Total,
-                Page = page,
-                PageSize = pageSize,
-                Data = response.Documents.Select(d => d.ToDto())
-            });
+            return response.IsValidResponse 
+                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) }) 
+                : StatusCode(500, response.DebugInformation);
         }
     }
 }
