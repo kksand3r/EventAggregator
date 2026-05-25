@@ -5,12 +5,6 @@ using EventAggregator.Domain.Models;
 
 namespace EventAggregator.Application.Services
 {
-    public class SearchIntent
-    {
-        public string[] Keywords { get; set; } = Array.Empty<string>();
-        public string? City { get; set; }
-    }
-
     public class GeminiService
     {
         private readonly string _apiKey;
@@ -33,31 +27,21 @@ namespace EventAggregator.Application.Services
             var systemPrompt =
                 "Ти — аналітичний асистент платформи EventSpace. Твоє завдання — зробити стисле (до 200 символів) " +
                 "резюме події на основі опису. ПИШИ СУВОРО: без емодзі, без знаків оклику, без рекламних закликів " +
-                "та без звертань до користувача. Тільки головна суть у 1-2 реченнях.";
+                "та без звертань до користувача. Tільки головна суть у 1-2 реченнях.";
 
             var requestBody = new
             {
                 contents = new[]
                 {
-                    new { parts = new[] { new { text = $"{systemPrompt}\n\nЗапит: {userPrompt}" } } }
+                    // Виправлено: передаємо назву події (title) та її опис (description) замість неіснуючого userPrompt
+                    new { parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } } }
                 },
                 generationConfig = new { temperature = 0.2, maxOutputTokens = 150 }
             };
 
-            var rawResult = await SendGeminiRequest(requestBody, "SearchIntent");
-
-            try
-            {
-                var cleanedJson = rawResult.Replace("```json", "").Replace("```", "").Trim();
-                return JsonSerializer.Deserialize<SearchIntent>(cleanedJson, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                }) ?? new SearchIntent();
-            }
-            catch
-            {
-                return new SearchIntent();
-            }
+            // Виправлено: викликаємо приватний метод з контекстом "SummarizeEvent"
+            // Він поверне чистий рядок тексту, згенерований штучним інтелектом
+            return await SendGeminiRequest(requestBody, "SummarizeEvent");
         }
 
         public async Task<AiSearchIntent> GetSearchIntentAsync(string userPrompt)
