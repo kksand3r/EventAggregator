@@ -28,11 +28,11 @@ try
 
     builder.Logging.ClearProviders();
     builder.Logging.AddSerilog();
-    
+
     builder.Services.AddInfrastructure(builder.Configuration);
 
     builder.Services.AddTransient<ScrapingService>();
-    
+
     builder.Services.AddTransient<IEventScraper, KarabasScraper>();
     builder.Services.AddTransient<IEventScraper, ConcertUaScraper>();
 
@@ -40,6 +40,22 @@ try
     builder.Services.AddHostedService<ScrapingWorker>();
 
     var host = builder.Build();
+
+    using (var scope = host.Services.CreateScope())
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        try
+        {
+            var repo = scope.ServiceProvider.GetRequiredService<IEventRepository>();
+            await repo.EnsureIndexCreatedAsync(CancellationToken.None);
+            logger.LogInformation("✅ Elasticsearch налаштовано та готовий до роботи.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "❌ Помилка при ініціалізації Elasticsearch.");
+        }
+    }
+
     await host.RunAsync();
 }
 catch (Exception ex)

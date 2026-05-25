@@ -5,7 +5,7 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**', // Дозволяємо всі HTTPS домени (для скрапера це найпростіший варіант)
+        hostname: '**', 
       },
       {
         protocol: 'http',

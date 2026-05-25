@@ -1,5 +1,5 @@
 using EventAggregator.Infrastructure;
-using System.Text.Json; 
+using System.Text.Json;
 using EventAggregator.Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,17 +8,14 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowNextJS", policy =>
     {
-        policy.WithOrigins("http://localhost:3000") 
+        policy.WithOrigins("http://localhost:3000")
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
 
 builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    });
+    .AddJsonOptions(options => { options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase; });
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -35,7 +32,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors("AllowNextJS"); 
+app.UseCors("AllowNextJS");
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
