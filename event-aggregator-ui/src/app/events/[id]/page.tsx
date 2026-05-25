@@ -1,11 +1,11 @@
 "use client";
 
-import {useEffect, useState} from "react";
-import {useParams, useRouter} from "next/navigation";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import {Calendar, MapPin, Eye, ArrowLeft, Loader2, Ticket, Sparkles} from "lucide-react";
+import { Calendar, MapPin, Eye, ArrowLeft, Loader2, Ticket, Sparkles } from "lucide-react";
 import EventCard from "@/components/EventCard";
-import {fetchEventById, fetchEvents, incrementView, fetchEventAiSummary, type EventListItem} from "@/lib/api";
+import { fetchEventById, fetchEvents, incrementView, fetchEventAiSummary, type EventListItem } from "@/lib/api";
 
 export default function EventDetailsPage() {
     const params = useParams();
@@ -33,21 +33,34 @@ export default function EventDetailsPage() {
         }
         let cancelled = false;
         setLoading(true);
+
         fetchEventById(id)
             .then((data) => {
                 if (cancelled) return;
-                setEvent(data);
-                if (data) {
-                    incrementView(id).catch(() => {
-                    });
-                    fetchEventAiSummary(id).then(summary => {
-                        if (!cancelled) setAiSummary(summary);
-                    });
+
+                // Перевіряємо, чи прийшли валідні дані події
+                if (!data || !data.id) {
+                    setEvent(null);
+                    return;
                 }
+
+                setEvent(data);
+
+                // Запускаємо фонові сервіси, якщо подія існує
+                incrementView(id).catch(() => {});
+                fetchEventAiSummary(id)
+                    .then(summary => {
+                        if (!cancelled) setAiSummary(summary);
+                    })
+                    .catch(() => {});
+            })
+            .catch(() => {
+                if (!cancelled) setEvent(null);
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
             });
+
         return () => {
             cancelled = true;
         };
@@ -59,7 +72,7 @@ export default function EventDetailsPage() {
         if (!eventId || !category) return;
 
         let cancelled = false;
-        fetchEvents({category: category, page: 1, pageSize: 4})
+        fetchEvents({ category: category, page: 1, pageSize: 4 })
             .then((res) => {
                 if (cancelled) return;
                 const list = res.data.filter(e => e.id !== eventId);
@@ -72,6 +85,7 @@ export default function EventDetailsPage() {
         };
     }, [event?.id, event?.category]);
 
+    // Поки йде завантаження або стан невизначений
     if (loading || event === undefined) {
         return (
             <div className="min-h-screen gradient-bg flex items-center justify-center">
@@ -80,14 +94,18 @@ export default function EventDetailsPage() {
         );
     }
 
+    // 🌟 ЗАХИСТ: Якщо подія null (Бекенд повернув 404), показуємо гарний відкат замість білого екрану
     if (!event) {
         return (
-            <div className="min-h-screen gradient-bg flex items-center justify-center">
-                <div className="card-glass rounded-2xl p-8 text-center max-w-md">
-                    <p className="text-violet-700/90 mb-4">Подію не знайдено.</p>
+            <div className="min-h-screen gradient-bg flex items-center justify-center p-6">
+                <div className="card-glass rounded-2xl p-8 text-center max-w-md border border-white/40 bg-white/20 backdrop-blur-md">
+                    <p className="text-violet-900 font-extrabold text-xl mb-2">Упс! Подію не знайдено</p>
+                    <p className="text-sm text-slate-600 mb-6">
+                        Цей квиток або ідентифікатор події більше не є актуальним чи відсутній у базі даних.
+                    </p>
                     <button onClick={() => router.push('/')}
-                            className="inline-flex items-center gap-2 text-violet-600 font-medium hover:underline">
-                        <ArrowLeft className="h-4 w-4"/> На головну
+                            className="inline-flex items-center gap-2 bg-violet-600 text-white px-6 py-2.5 rounded-full font-bold hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200">
+                        <ArrowLeft className="h-4 w-4"/> Повернутися на головну
                     </button>
                 </div>
             </div>
@@ -100,7 +118,7 @@ export default function EventDetailsPage() {
                 className="sticky top-0 z-50 bg-[rgba(230,230,240,0.75)] backdrop-blur-[22px] border-b border-[rgba(210,210,225,0.8)]">
                 <button
                     onClick={handleGoBack}
-                    className="inline-flex items-center gap-2 text-violet-800/90 font-bold hover:text-violet-600  max-w-6xl mx-auto px-4 py-4"
+                    className="inline-flex items-center gap-2 text-violet-800/90 font-bold hover:text-violet-600 max-w-6xl mx-auto px-4 py-4"
                 >
                     <ArrowLeft className="h-5 w-5"/>
                 </button>
@@ -114,7 +132,7 @@ export default function EventDetailsPage() {
                         <div className="relative w-full md:w-5/12 shrink-0 h-[500px] md:h-auto">
                             <Image
                                 src={event.image || "/placeholder-event.jpg"}
-                                alt={event.title}
+                                alt={event.title || "Event Image"}
                                 fill
                                 className="object-cover"
                                 priority
@@ -122,13 +140,14 @@ export default function EventDetailsPage() {
                             <div className="absolute top-8 left-8 flex flex-col gap-3">
                                 <span
                                     className="inline-flex items-center gap-1.5 rounded-full bg-white/95 backdrop-blur-md px-3 py-1.5 text-[11px] font-black text-violet-700 shadow-xl uppercase tracking-wider w-fit">
-                                    <Eye className="h-3.5 w-3.5 shrink-0"/> 
-                                    <span>{event.viewCount.toLocaleString("uk-UA")}</span>
+                                    <Eye className="h-3.5 w-3.5 shrink-0"/>
+                                    {/* 🌟 ВИПРАВЛЕННЯ: Безпечний виклик форматування з фолбеком на 0 */}
+                                    <span>{(event.viewCount ?? 0).toLocaleString("uk-UA")}</span>
                                 </span>
 
                                 <span
                                     className="inline-flex items-center rounded-full bg-violet-600 px-3 py-1.5 text-[11px] font-black text-white shadow-xl uppercase tracking-widest w-fit">
-                                    {event.category}
+                                    {event.category || "Подія"}
                                 </span>
                             </div>
                         </div>
@@ -146,7 +165,7 @@ export default function EventDetailsPage() {
                                         </div>
                                         <div>
                                             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black mb-1">Коли</p>
-                                            <span className="text-xl font-extrabold text-slate-900">{event.date}</span>
+                                            <span className="text-xl font-extrabold text-slate-900">{event.date || "Дата уточнюється"}</span>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-5">
@@ -156,18 +175,17 @@ export default function EventDetailsPage() {
                                         </div>
                                         <div>
                                             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black mb-1">Де</p>
-                                            <span className="text-xl font-extrabold text-slate-900">{event.city}</span>
+                                            <span className="text-xl font-extrabold text-slate-900">{event.city || "Місто уточнюється"}</span>
                                         </div>
                                     </div>
                                 </div>
                                 <a
-                                    href={event.url}
+                                    href={event.url || "#"}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="w-full sm:w-auto inline-flex items-center justify-center gap-4 bg-slate-950 text-white px-14 py-6 rounded-3xl font-black shadow-2xl hover:bg-violet-600 transition-all active:scale-95 text-xl group"
                                 >
-                                    <Ticket className="h-6 w-6 group-hover:rotate-12 transition-transform"/> Купити
-                                    квиток
+                                    <Ticket className="h-6 w-6 group-hover:rotate-12 transition-transform"/> Купити квиток
                                 </a>
                             </div>
                         </div>
@@ -186,8 +204,9 @@ export default function EventDetailsPage() {
                                             <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
                                                 <Sparkles className="h-5 w-5 text-white"/>
                                             </div>
-                                            <h4 className="text-[11px] font-black uppercase tracking-[0.3em] text-violet-100/90">Чому
-                                                варто піти (AI Analysis)</h4>
+                                            <h4 className="text-[11px] font-black uppercase tracking-[0.3em] text-violet-100/90">
+                                                Чому варто піти (AI Analysis)
+                                            </h4>
                                         </div>
                                         <p className="text-white leading-relaxed text-xl md:text-2xl font-bold italic">
                                             «{aiSummary}»
@@ -202,8 +221,7 @@ export default function EventDetailsPage() {
                 {related.length > 0 && (
                     <section className="mt-32">
                         <div className="flex items-end justify-between mb-12 px-4">
-                            <h2 className="text-4xl font-black text-slate-950 tracking-tighter">Вам також
-                                сподобається</h2>
+                            <h2 className="text-4xl font-black text-slate-950 tracking-tighter">Вам також сподобається</h2>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-12">
                             {related.map((e) => <EventCard key={e.id} event={e}/>)}
