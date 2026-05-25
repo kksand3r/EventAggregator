@@ -24,7 +24,8 @@ services:
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=gemini-flash-lite-latest
-
+      - ELASTICSEARCH_COMPATIBLE_WITH=8
+      - ELASTIC_CLIENT_APIVERSIONCHECKING=false
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - PORT=5001
     ports:
