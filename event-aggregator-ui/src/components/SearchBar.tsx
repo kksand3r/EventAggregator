@@ -141,21 +141,35 @@ export default function SearchBar({
             return;
         }
 
+        // 🌟 ЗМІНА: Додаємо локальний прапорець для відстеження актуальності запиту
+        let cancelled = false;
+
         const runSearch = async () => {
             setIsLoading(true);
             try {
                 const result = await fetchAiSearchSuggestions(localValue);
+
+                // 🌟 Якщо користувач вже встиг ввести щось інше — ігноруємо цей результат
+                if (cancelled) return;
+
                 setAiResponse(result);
                 setShowDropdown(Boolean(result.agentMessage) || result.events.length > 0);
             } catch (error) {
-                console.error("AI Search Error:", error);
+                if (!cancelled) {
+                    console.error("AI Search Error:", error);
+                }
             } finally {
-                setIsLoading(false);
+                if (!cancelled) setIsLoading(false);
             }
         };
 
         const timer = setTimeout(runSearch, 600);
-        return () => clearTimeout(timer);
+
+        // 🌟 Обов'язково виставляємо в true при кожній зміні localValue
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
     }, [localValue, searchMode]);
 
     useEffect(() => {
