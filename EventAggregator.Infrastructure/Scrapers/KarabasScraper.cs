@@ -22,15 +22,16 @@ public class KarabasScraper : IEventScraper
     
     private readonly SemaphoreSlim _semaphore = new(2); 
 
-    private readonly string[] _citySlugs = 
+    private readonly string[] _citySlugs =
     {
         "mykolaiv", "uzhhorod", "kropyvnytskyi", "lutsk", // "kharkiv", "ivano-frankivsk",
         //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
         //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
         //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
-    
-    private readonly string[] _categories = { "concerts", "theatres", "stand-up", "child", "clubs", "inshe", "festivals" };
+
+    private readonly string[] _categories =
+        { "concerts", "theatres", "stand-up", "child", "clubs", "inshe", "festivals" };
 
     public KarabasScraper(ILogger<KarabasScraper> logger) => _logger = logger;
 

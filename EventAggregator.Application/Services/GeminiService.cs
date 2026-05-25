@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using EventAggregator.Domain.Models;
 
 namespace EventAggregator.Application.Services
 {
@@ -23,55 +24,16 @@ namespace EventAggregator.Application.Services
             _httpClient = httpClient;
         }
 
-        public async Task<float[]?> GenerateEmbeddingAsync(string text)
+        public async Task<string> SummarizeEventAsync(string title, string description)
         {
-            try
-            {
-                var url = $"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={_apiKey}";
-                var requestBody = new
-                {
-                    model = "models/text-embedding-004",
-                    content = new { parts = new[] { new { text } } }
-                };
-                var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-                var content = new StringContent(JsonSerializer.Serialize(requestBody, jsonOptions), Encoding.UTF8, "application/json");
+            if (string.IsNullOrWhiteSpace(description) || description == "Опис на сайті" ||
+                description == "Опис відсутній")
+                return "AI не може проаналізувати подію через відсутність детального опису.";
 
-                var response = await _httpClient.PostAsync(url, content);
-                if (!response.IsSuccessStatusCode)
-                {
-                    var err = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[Gemini Embedding Error] {response.StatusCode}: {err}");
-                    return null;
-                }
-
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(jsonResponse);
-                var values = doc.RootElement
-                    .GetProperty("embedding")
-                    .GetProperty("values")
-                    .EnumerateArray()
-                    .Select(v => v.GetSingle())
-                    .ToArray();
-
-                return values;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Gemini Embedding Exception] {ex.Message}");
-                return null;
-            }
-        }
-
-        public async Task<SearchIntent> GetSearchIntentAsync(string userPrompt)
-        {
-            if (string.IsNullOrWhiteSpace(userPrompt)) return new SearchIntent();
-
-            var systemPrompt = @"Ти — аналітик пошукових запитів. 
-            Твоє завдання: розібрати запит користувача і повернути JSON з двома полями:
-            1. 'keywords' (масив рядків): ключові слова для пошуку подій (жанр, назва, категорія).
-            2. 'city' (рядок або null): назва міста, якщо воно вказано в запиті.
-            
-            Відповідай ТІЛЬКИ валідним JSON форматом. Жодних пояснень чи тексту поза JSON.";
+            var systemPrompt =
+                "Ти — аналітичний асистент платформи EventSpace. Твоє завдання — зробити стисле (до 200 символів) " +
+                "резюме події на основі опису. ПИШИ СУВОРО: без емодзі, без знаків оклику, без рекламних закликів " +
+                "та без звертань до користувача. Тільки головна суть у 1-2 реченнях.";
 
             var requestBody = new
             {
@@ -98,39 +60,129 @@ namespace EventAggregator.Application.Services
             }
         }
 
-        public async Task<string> SummarizeEventAsync(string title, string description)
+        public async Task<AiSearchIntent> GetSearchIntentAsync(string userPrompt)
         {
-            if (string.IsNullOrWhiteSpace(description) || description == "Опис на сайті" || description == "Опис відсутній")
-                return "AI не може проаналізувати подію через відсутність детального опису.";
-
-            var systemPrompt = "Ти — аналітичний асистент платформи EventSpace. Твоє завдання — зробити стисле (до 200 символів) " +
-                               "резюме події. ПИШИ СУВОРО: без емодзі, без знаків оклику, без реклами. 1-2 речення.";
+            if (string.IsNullOrWhiteSpace(userPrompt)) return new AiSearchIntent();
 
             var requestBody = new
             {
                 contents = new[]
                 {
-                    new { parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } } }
+                    new { parts = new[] { new { text = userPrompt } } }
                 },
-                generationConfig = new { temperature = 0.4, maxOutputTokens = 150 }
+                tools = new[]
+                {
+                    new
+                    {
+                        functionDeclarations = new[]
+                        {
+                            new
+                            {
+                                name = "search_events",
+                                description =
+                                    "Шукає події. Викликай цю функцію, щоб витягти параметри з текстового запиту користувача.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        city = new
+                                        {
+                                            type = "STRING",
+                                            description =
+                                                "Місто англійською (тільки KYIV, ODESA, DNIPRO, LVIV, KHARKIV, IVANO-FRANKIVSK, VINNYTSIA, POLTAVA, ZHYTOMYR, ZAPORIZHZHIA, TERNOPIL, CHERNIVTSI, CHERNIHIV, SUMY, KHMELNYTSKYI, RIVNE, LUTSK, MYKOLAIV, UZHHOROD, KROPYVNYTSKYI). Якщо не вказано, поверни null."
+                                        },
+                                        category = new
+                                        {
+                                            type = "STRING",
+                                            description =
+                                                "Категорія (concerts, theatres, stand-up, child, festivals, inshe). Наприклад, гумор - це stand-up, вистава - це theatres. Якщо не вказано, поверни null."
+                                        },
+                                        keywords = new
+                                        {
+                                            type = "STRING",
+                                            description =
+                                                "Будь-які інші ключові слова, які користувач шукає (наприклад, 'джаз', 'океан ельзи', 'романтика')."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+
+                toolConfig = new
+                {
+                    functionCallingConfig = new
+                    {
+                        mode = "ANY",
+                        allowedFunctionNames = new[] { "search_events" }
+                    }
+                }
             };
 
-            return await SendGeminiRequest(requestBody, "Summarize");
-        }
+            try
+            {
+                var url =
+                    $"https://generativelanguage.googleapis.com/v1beta/models/{_model}:generateContent?key={_apiKey}";
+                var jsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                };
+                var content = new StringContent(JsonSerializer.Serialize(requestBody, jsonOptions), Encoding.UTF8,
+                    "application/json");
 
-        public async Task<string[]> GetSearchKeywordsAsync(string query)
-        {
-            var intent = await GetSearchIntentAsync(query);
-            return intent.Keywords;
+                var response = await _httpClient.PostAsync(url, content);
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+
+                Console.WriteLine($"[Gemini RAW Response]: {jsonResponse}");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[Gemini API Error] {jsonResponse}");
+                    return new AiSearchIntent { Keywords = userPrompt };
+                }
+
+                using var doc = JsonDocument.Parse(jsonResponse);
+                var parts = doc.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0];
+
+                if (parts.TryGetProperty("functionCall", out var functionCall))
+                {
+                    var args = functionCall.GetProperty("args");
+
+                    return new AiSearchIntent
+                    {
+                        City = args.TryGetProperty("city", out var c) && c.ValueKind != JsonValueKind.Null
+                            ? c.GetString()
+                            : null,
+                        Category = args.TryGetProperty("category", out var cat) && cat.ValueKind != JsonValueKind.Null
+                            ? cat.GetString()
+                            : null,
+                        Keywords = args.TryGetProperty("keywords", out var k) && k.ValueKind != JsonValueKind.Null
+                            ? k.GetString()
+                            : null
+                    };
+                }
+
+                return new AiSearchIntent { Keywords = userPrompt };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Gemini Tool Error] {ex.Message}");
+                return new AiSearchIntent { Keywords = userPrompt };
+            }
         }
 
         private async Task<string> SendGeminiRequest(object requestBody, string context)
         {
             try
             {
-                var url = $"https://generativelanguage.googleapis.com/v1beta/models/{_model}:generateContent?key={_apiKey}";
+                var url =
+                    $"https://generativelanguage.googleapis.com/v1beta/models/{_model}:generateContent?key={_apiKey}";
                 var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-                var content = new StringContent(JsonSerializer.Serialize(requestBody, jsonOptions), Encoding.UTF8, "application/json");
+                var content = new StringContent(JsonSerializer.Serialize(requestBody, jsonOptions), Encoding.UTF8,
+                    "application/json");
 
                 var response = await _httpClient.PostAsync(url, content);
 

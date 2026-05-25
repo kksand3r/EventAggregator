@@ -4,6 +4,7 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <UserSecretsId>65595f20-35e5-4b48-9385-2c023c70106b</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>
@@ -11,6 +12,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <PackageReference Include="Elastic.Clients.Elasticsearch" Version="8.13.8" />
       <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="11.0.0-preview.1.26104.118" />
       <PackageReference Include="PuppeteerSharp" Version="21.0.0" />
     </ItemGroup>

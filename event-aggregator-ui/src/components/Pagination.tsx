@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {useState, useEffect} from "react";
+import {ChevronLeft, ChevronRight} from "lucide-react";
 
 interface PaginationProps {
     currentPage: number;
@@ -57,15 +57,16 @@ export default function Pagination({
     const pageNumbers = getPageNumbers();
 
     return (
-        <div className="flex flex-wrap items-center justify-center gap-4 mt-12 mb-8">
-            <div className="flex items-center gap-2 bg-white/90 backdrop-blur-xl p-2 rounded-2xl border border-violet-200 shadow-md">
+        <div className="flex flex-wrap items-center justify-center gap-4 mt-12">
+            <div
+                className="flex items-center gap-2 bg-white/90 backdrop-blur-xl p-2 rounded-2xl border border-violet-200 shadow-md">
                 <button
                     onClick={() => onPageChange(currentPage - 1)}
                     disabled={currentPage === 1}
                     className="p-2.5 rounded-xl text-violet-800 hover:bg-violet-100 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
                     title="Previous"
                 >
-                    <ChevronLeft className="h-5 w-5 stroke-[3px]" />
+                    <ChevronLeft className="h-5 w-5 stroke-[3px]"/>
                 </button>
 
                 <div className="flex items-center gap-1">
@@ -103,10 +104,10 @@ export default function Pagination({
                     className="p-2.5 rounded-xl text-violet-800 hover:bg-violet-100 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
                     title="Next"
                 >
-                    <ChevronRight className="h-5 w-5 stroke-[3px]" />
+                    <ChevronRight className="h-5 w-5 stroke-[3px]"/>
                 </button>
             </div>
-            
+
             <form
                 onSubmit={handleInputSubmit}
                 className="flex items-center gap-2 px-3 py-2 bg-white/95 backdrop-blur-xl rounded-2xl border border-violet-200 shadow-md"
@@ -125,7 +126,7 @@ export default function Pagination({
                     className="p-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 disabled:bg-violet-200 transition-all shadow-md"
                     disabled={!inputValue}
                 >
-                    <ChevronRight className="h-4 w-4 stroke-[3px]" />
+                    <ChevronRight className="h-4 w-4 stroke-[3px]"/>
                 </button>
             </form>
         </div>
