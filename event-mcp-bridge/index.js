@@ -35,7 +35,6 @@ try {
     console.error("❌ Failed to connect to MCP Server during startup:", err);
 }
 
-// Очищаємо схему від полів які Gemini не підтримує
 function cleanSchema(schema) {
     if (!schema || typeof schema !== 'object') return schema;
 
@@ -68,13 +67,14 @@ app.post('/api/mcp-search', async (req, res) => {
         const functionDeclarations = mcpTools.tools.map(tool => ({
             name: tool.name,
             description: tool.description,
-            parameters: cleanSchema(tool.inputSchema)  // ✅ очищена схема
+            parameters: cleanSchema(tool.inputSchema)
         }));
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
+        // Первинний промпт: просимо скористатися пошуком
         let geminiRequestBody = {
-            contents: [{ parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь.` }] }],
+            contents: [{ parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події.` }] }],
             tools: [{ functionDeclarations }],
             toolConfig: { functionCallingConfig: { mode: "AUTO" } }
         };
@@ -86,14 +86,23 @@ app.post('/api/mcp-search', async (req, res) => {
         });
 
         let jsonResponse = await response.json();
-        console.log("[Gemini Response]:", JSON.stringify(jsonResponse, null, 2));
         let candidate = jsonResponse.candidates?.[0];
         let part = candidate?.content?.parts?.[0];
-        console.log("[Part]:", JSON.stringify(part, null, 2));
 
         if (part?.functionCall) {
             const { name, args } = part.functionCall;
             const toolResult = await mcpClient.callTool({ name, arguments: args });
+
+            // ОНОВЛЕНА СУВОРA ІНСТРУКЦІЯ ДЛЯ ФІНАЛЬНОГО ВИВОДУ (RAG)
+            const finalSystemInstruction =
+                "Ти — привітний та лаконічний асистент платформи EventSpace. " +
+                "Твоє завдання — проаналізувати знайдені в Elasticsearch події та дати користувачу СТИСЛУ, коротку відповідь. " +
+                "СУВОРІ ПРАВИЛА:\n" +
+                "1. Максимальна довжина відповіді — 2-3 речення (до 200-250 символів).\n" +
+                "2. Зроби лише короткий, влучний підсумок або рекомендацію на основі знайденого (як короткий анонс).\n" +
+                "3. Не перелічуй технічні деталі, ID, URL-адреси, описи полів чи системні логи Elasticsearch.\n" +
+                "4. Не пиши великих простирадл тексту та списків з детальними описами — картки подій користувач і так побачить під твоїм повідомленням.\n" +
+                "5. Пиши виключно українською мовою, дружньо та професійно.";
 
             const finalRequestBody = {
                 contents: [
@@ -108,7 +117,13 @@ app.post('/api/mcp-search', async (req, res) => {
                             }
                         }]
                     }
-                ]
+                ],
+                // Додаємо системну інструкцію та обмежуємо кількість токенів на вихід
+                systemInstruction: { parts: [{ text: finalSystemInstruction }] },
+                generationConfig: {
+                    temperature: 0.4, // менша креативність для точнішого і коротшого результату
+                    maxOutputTokens: 150 // жорстке обмеження на довжину генерації тексту
+                }
             };
 
             let finalResponse = await fetch(url, {
@@ -118,11 +133,10 @@ app.post('/api/mcp-search', async (req, res) => {
             });
 
             let finalJson = await finalResponse.json();
-            console.log("[Gemini Final Response]:", JSON.stringify(finalJson, null, 2));
             let finalTxt = finalJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
             return res.json({
-                agentMessage: finalTxt,
+                agentMessage: finalTxt.trim(),
                 rawMcpData: toolResult.content
             });
         }
@@ -134,7 +148,6 @@ app.post('/api/mcp-search', async (req, res) => {
 
     } catch (error) {
         console.error("[Bridge Error] Message:", error.message);
-        console.error("[Bridge Error] Stack:", error.stack);
         res.status(500).json({ error: error.message });
     }
 });
