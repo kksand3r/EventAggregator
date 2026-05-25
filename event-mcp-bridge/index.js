@@ -14,7 +14,7 @@ const transport = new StdioClientTransport({
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
     env: {
         ...process.env,
-        ES_URL: ELASTIC_URL  // ✅ правильна назва змінної
+        ES_URL: ELASTIC_URL
     }
 });
 
@@ -35,6 +35,26 @@ try {
     console.error("❌ Failed to connect to MCP Server during startup:", err);
 }
 
+// Очищаємо схему від полів які Gemini не підтримує
+function cleanSchema(schema) {
+    if (!schema || typeof schema !== 'object') return schema;
+
+    const forbidden = ['$schema', 'additionalProperties'];
+    const cleaned = {};
+
+    for (const [key, value] of Object.entries(schema)) {
+        if (forbidden.includes(key)) continue;
+        if (Array.isArray(value)) {
+            cleaned[key] = value.map(item => cleanSchema(item));
+        } else if (typeof value === 'object') {
+            cleaned[key] = cleanSchema(value);
+        } else {
+            cleaned[key] = value;
+        }
+    }
+    return cleaned;
+}
+
 app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
@@ -48,7 +68,7 @@ app.post('/api/mcp-search', async (req, res) => {
         const functionDeclarations = mcpTools.tools.map(tool => ({
             name: tool.name,
             description: tool.description,
-            parameters: tool.inputSchema
+            parameters: cleanSchema(tool.inputSchema)  // ✅ очищена схема
         }));
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
@@ -64,13 +84,13 @@ app.post('/api/mcp-search', async (req, res) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(geminiRequestBody)
         });
-        
+
         let jsonResponse = await response.json();
-        console.log("[Gemini Response]:", JSON.stringify(jsonResponse, null, 2)); // ← додай тут
+        console.log("[Gemini Response]:", JSON.stringify(jsonResponse, null, 2));
         let candidate = jsonResponse.candidates?.[0];
         let part = candidate?.content?.parts?.[0];
-        console.log("[Part]:", JSON.stringify(part, null, 2)); // ← і тут
-        
+        console.log("[Part]:", JSON.stringify(part, null, 2));
+
         if (part?.functionCall) {
             const { name, args } = part.functionCall;
             const toolResult = await mcpClient.callTool({ name, arguments: args });
@@ -84,7 +104,7 @@ app.post('/api/mcp-search', async (req, res) => {
                         parts: [{
                             functionResponse: {
                                 name: name,
-                                response: { output: JSON.stringify(toolResult.content) }  // ✅ серіалізуємо в рядок
+                                response: { output: JSON.stringify(toolResult.content) }
                             }
                         }]
                     }
@@ -98,6 +118,7 @@ app.post('/api/mcp-search', async (req, res) => {
             });
 
             let finalJson = await finalResponse.json();
+            console.log("[Gemini Final Response]:", JSON.stringify(finalJson, null, 2));
             let finalTxt = finalJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
             return res.json({
