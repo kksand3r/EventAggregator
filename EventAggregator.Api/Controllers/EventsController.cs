@@ -26,60 +26,53 @@ namespace EventAggregator.Api.Controllers
             _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
         }
 
-[HttpGet("ai-search")]
-public async Task<IActionResult> AiSearch([FromQuery] string? query)
-{
-    if (string.IsNullOrWhiteSpace(query)) 
-        return Ok(new { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
-
-    try
-    {
-        var requestBody = new { query = query };
-        var content = new StringContent(
-            JsonSerializer.Serialize(requestBody), 
-            Encoding.UTF8, 
-            "application/json"
-        );
-
-        // 1. Запит до нашого Node.js MCP проксі-мосту
-        var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
-        
-        if (!response.IsSuccessStatusCode)
+        [HttpGet("ai-search")]
+        public async Task<IActionResult> AiSearch([FromQuery] string? query)
         {
-            return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
-        }
+            if (string.IsNullOrWhiteSpace(query)) 
+                return Ok(new { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
 
-        var jsonResponse = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(jsonResponse);
-        
-        var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
-        var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
-
-        var eventsList = new List<EventDto>();
-        
-        // 2. ✅ ПРАВИЛЬНИЙ ПАРСИНГ: Розбираємо структуру відповіді MCP-сервера Elastic
-        if (rawMcpData.ValueKind == JsonValueKind.Array && rawMcpData.GetArrayLength() > 0)
-        {
-            // Отримуємо перший блок контенту з типом text
-            var firstBlock = rawMcpData[0];
-            if (firstBlock.TryGetProperty("text", out var textProp))
+            try
             {
-                var elasticResponseText = textProp.GetString();
-                if (!string.IsNullOrWhiteSpace(elasticResponseText))
+                var requestBody = new { query = query };
+                var content = new StringContent(
+                    JsonSerializer.Serialize(requestBody), 
+                    Encoding.UTF8, 
+                    "application/json"
+                );
+
+                // 1. Робимо запит до нашого Node.js MCP проксі-мосту
+                var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
+                
+                if (!response.IsSuccessStatusCode)
                 {
-                    // Парсимо внутрішній сирий JSON відповіді від самого Elasticsearch
-                    using var elasticDoc = JsonDocument.Parse(elasticResponseText);
-                    
-                    // Пробиваємось крізь структуру hits -> hits (масив знайдених документів)
-                    if (elasticDoc.RootElement.TryGetProperty("hits", out var hitsObj) &&
-                        hitsObj.TryGetProperty("hits", out var hitsArray))
+                    return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
+                }
+
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(jsonResponse);
+                
+                // 2. Витягуємо людяну текстову відповідь, згенеровану Gemini через MCP
+                var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
+                
+                // 3. Витягуємо сирі дані з інструменту MCP Elasticsearch
+                var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
+
+                // Перетворюємо результат виконання інструменту назад у DTO для фронтенду
+                var eventsList = new List<EventDto>();
+                
+                if (rawMcpData.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in rawMcpData.EnumerateArray())
                     {
-                        foreach (var hit in hitsArray.EnumerateArray())
+                        // Текст від MCP-сервера Elastic зазвичай приходить у властивості "text" у форматі рядка JSON
+                        if (item.TryGetProperty("text", out var textProp))
                         {
-                            // Дістаємо чисте тіло документа з поля _source
-                            if (hit.TryGetProperty("_source", out var sourceObj))
+                            var hitText = textProp.GetString();
+                            try
                             {
-                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(sourceObj.GetRawText(), new JsonSerializerOptions
+                                // Десеріалізуємо сирий документ у нашу доменну модель ScrapedEvent
+                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(hitText, new JsonSerializerOptions
                                 {
                                     PropertyNameCaseInsensitive = true
                                 });
@@ -89,24 +82,26 @@ public async Task<IActionResult> AiSearch([FromQuery] string? query)
                                     eventsList.Add(scrapedEvent.ToDto());
                                 }
                             }
+                            catch (JsonException)
+                            {
+                                // Якщо формат всередині text відрізняється, пропускаємо або логуємо
+                            }
                         }
                     }
                 }
+
+                // 4. Повертаємо єдину структуровану відповідь для нашого UI
+                return Ok(new 
+                { 
+                    AgentMessage = agentMessage, 
+                    Events = eventsList 
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
             }
         }
-
-        // 3. Віддаємо на фронтенд текст для блоку асистента та повноцінний масив подій для клікабельних карток
-        return Ok(new 
-        { 
-            AgentMessage = agentMessage, 
-            Events = eventsList 
-        });
-    }
-    catch (Exception ex)
-    {
-        return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
-    }
-}
 
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
