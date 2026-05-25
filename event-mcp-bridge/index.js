@@ -1,6 +1,10 @@
 ﻿import express from 'express';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json());
@@ -9,19 +13,16 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
-// 🌟 ЧИСТИЙ ВАРІАНТ: передаємо змінні оточення Node безпосередньо в процес MCP інструменту
+// 🌟 ВИПРАВЛЕННЯ: Підключаємо наш файл patch-elastic.js примусово через аргумент Node.js
 const transport = new StdioClientTransport({
     command: "node",
     args: [
+        "--import", path.join(__dirname, "./patch-elastic.js"), // Інжектуємо фікс сумісності заголовків
         "./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"
     ],
     env: {
         ...process.env,
-        ES_URL: ELASTIC_URL,
-        // Примусово змушуємо внутрішній клієнт Elastic вважати, що він працює з 8 версією:
-        ELASTIC_CLIENT_PASSTHROUGH_OPTIONS: "compatible-with=8",
-        ELASTICSEARCH_COMPATIBLE_WITH: "8",
-        ELASTIC_CLIENT_APIVERSIONCHECKING: "false"
+        ES_URL: ELASTIC_URL
     }
 });
 
@@ -82,7 +83,7 @@ app.post('/api/mcp-search', async (req, res) => {
         let conversationHistory = [
             {
                 role: "user",
-                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Завжди обмежуй параметри 'size' до максимум 5-10 результатів.` }]
+                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Обмежуй параметри 'size' до максимум 5-10 результатів.` }]
             }
         ];
 
