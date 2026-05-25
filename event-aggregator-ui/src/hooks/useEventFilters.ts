@@ -3,7 +3,7 @@
 import {useState, useEffect, useCallback} from "react";
 import {useSearchParams, useRouter} from "next/navigation";
 
-export type Tab = "featured" | "catalog" | "timeline" | "stats" | archive;
+export type Tab = "featured" | "catalog" | "timeline" | "stats" | "archive";
 export type SearchMode = 'ai' | 'classic';
 
 const VALID_TABS: Tab[] = ["featured", "catalog", "timeline", "stats", "archive"];
