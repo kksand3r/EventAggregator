@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Search, Sparkles, Loader2, Calendar, MapPin, List, X, Bot } from "lucide-react";
+import { Search, Sparkles, Loader2, Calendar, MapPin, List, X, Bot, ArrowUpRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-import Link from "next/link"; // 🌟 Обов'язково додаємо імпорт Link
+import Link from "next/link";
 import { fetchAiSearchSuggestions, AiSearchResponse } from "@/lib/api";
 
 interface SearchBarProps {
@@ -13,58 +13,79 @@ interface SearchBarProps {
     placeholder?: string;
 }
 
-// 🌟 Переносимо всеїдний парсер посилань сюди, щоб він працював всередині Дропдауна
+// 🌟 МАГІЯ ТУТ: Новий дизайнерський парсер для відповідей ШІ
 function RenderAiDropdownMessage({ text }: { text: string }) {
     if (!text) return null;
 
     const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
     const lines = text.split('\n');
 
+    const introText: string[] = [];
+    const eventLinks: { text: string; url: string }[] = [];
+    const outroText: string[] = [];
+
+    // Розділяємо текст на вступ, лінки подій та висновок
+    lines.forEach(line => {
+        let cleanLine = line.replace(/^\s*[\*\-]\s+/, "").trim();
+        if (!cleanLine) return;
+
+        regex.lastIndex = 0;
+        const match = regex.exec(cleanLine);
+
+        if (match) {
+            eventLinks.push({ text: match[1], url: match[2] });
+        } else if (eventLinks.length === 0) {
+            introText.push(cleanLine);
+        } else {
+            outroText.push(cleanLine);
+        }
+    });
+
     return (
-        <div className="space-y-1.5">
-            {lines.map((line, lineIdx) => {
-                // Вичищаємо маркерні зірочки списку (*), які додає ШІ
-                let cleanLine = line.replace(/^\s*[\*\-]\s+/, "");
+        <div className="space-y-3.5">
+            {/* Вступне слово асистента */}
+            {introText.length > 0 && (
+                <p className="text-sm text-[#1a1535]/80 font-medium leading-relaxed">
+                    {introText.join('\n')}
+                </p>
+            )}
 
-                const parts = [];
-                let lastIndex = 0;
-                let match;
+            {/* 🌟 КРАСИВІ КЛІКАБЕЛЬНІ ШІ-КАРТКИ ЗАМІСТЬ СИРОГО ТЕКСТУ */}
+            {eventLinks.length > 0 && (
+                <div className="grid grid-cols-1 gap-2 max-h-[240px] overflow-y-auto pr-1 custom-scrollbar">
+                    {eventLinks.map((link, idx) => {
+                        // Пробуємо витягнути дату, якщо ШІ повернув її через дефіс
+                        const [title, date] = link.text.split(/\s+-\s+/);
 
-                regex.lastIndex = 0;
+                        return (
+                            <Link
+                                key={idx}
+                                href={link.url}
+                                className="group flex items-center justify-between p-3 rounded-xl bg-white border border-[#7c4dff]/10 hover:border-[#7c4dff]/40 hover:bg-[#7c4dff]/5 transition-all duration-200 shadow-[0_2px_8px_rgba(124,77,255,0.02)]"
+                            >
+                                <div className="flex flex-col gap-0.5 max-w-[90%]">
+                                    <span className="text-xs font-bold text-[#1a1535] group-hover:text-[#7c4dff] transition-colors line-clamp-1">
+                                        {title}
+                                    </span>
+                                    {date && (
+                                        <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                                            <Calendar className="w-3 h-3 text-[#7c4dff]/60" /> {date}
+                                        </span>
+                                    )}
+                                </div>
+                                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-[#7c4dff] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all shrink-0" />
+                            </Link>
+                        );
+                    })}
+                </div>
+            )}
 
-                while ((match = regex.exec(cleanLine)) !== null) {
-                    if (match.index > lastIndex) {
-                        parts.push(cleanLine.substring(lastIndex, match.index));
-                    }
-
-                    const linkText = match[1];
-                    const linkUrl = match[2];
-
-                    parts.push(
-                        <Link
-                            key={match.index}
-                            href={linkUrl}
-                            className="text-[#7c4dff] font-bold underline hover:text-[#5e35b1] transition-all bg-[#7c4dff]/6 px-1.5 py-0.5 rounded-lg mx-0.5 inline-block"
-                        >
-                            {linkText}
-                        </Link>
-                    );
-                    lastIndex = regex.lastIndex;
-                }
-
-                if (lastIndex < cleanLine.length) {
-                    parts.push(cleanLine.substring(lastIndex));
-                }
-
-                // Якщо рядок порожній — пропускаємо, щоб не розтягувати дропдаун
-                if (!cleanLine.trim()) return null;
-
-                return (
-                    <p key={lineIdx} className="text-sm text-[#1a1535]/90 leading-relaxed font-medium">
-                        {parts.length > 0 ? parts : cleanLine}
-                    </p>
-                );
-            })}
+            {/* Фінальне слово асистента */}
+            {outroText.length > 0 && (
+                <p className="text-xs text-slate-500 font-medium pt-1 border-t border-slate-100">
+                    {outroText.join('\n')}
+                </p>
+            )}
         </div>
     );
 }
@@ -216,29 +237,30 @@ export default function SearchBar({
             {/* Випадаюче вікно ШІ Рекомендацій */}
             {searchMode === 'ai' && showDropdown && (aiResponse.agentMessage || aiResponse.events.length > 0) && (
                 <div
-                    className="absolute top-14 left-0 right-0 bg-white/98 backdrop-blur-[25px] rounded-3xl p-4 border border-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] z-[100] flex flex-col gap-4 max-h-[450px] overflow-y-auto">
+                    className="absolute top-14 left-0 right-0 bg-white/95 backdrop-blur-[30px] rounded-[2rem] p-5 border border-white/60 shadow-[0_24px_60px_rgba(26,21,53,0.14)] z-[100] flex flex-col gap-4 max-h-[500px] overflow-y-auto">
 
                     {/* Текстова відповідь від ШІ Агента */}
                     {aiResponse.agentMessage && (
-                        <div className="bg-gradient-to-br from-[#7c4dff]/8 to-[#5a4fa0]/4 rounded-2xl p-4 border border-[#7c4dff]/15">
-                            <div className="flex items-center gap-2 mb-2">
-                                <Bot className="w-4 h-4 text-[#7c4dff]"/>
-                                <span className="text-[11px] font-bold text-[#7c4dff] uppercase tracking-wider">
+                        <div className="bg-gradient-to-br from-[#7c4dff]/5 to-[#5a4fa0]/2 rounded-2xl p-4 border border-[#7c4dff]/10">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="p-1.5 bg-[#7c4dff]/10 rounded-lg">
+                                    <Bot className="w-3.5 h-3.5 text-[#7c4dff]"/>
+                                </div>
+                                <span className="text-[10px] font-black text-[#7c4dff] uppercase tracking-[0.15em]">
                                     AI Асистент
                                 </span>
                             </div>
-                            {/* 🌟 ЗАМІСТЬ СИРОГО ТЕКСТУ ВИКЛИКАЄМО НАШ ПАРСЕР ПОСИЛАНЬ */}
                             <RenderAiDropdownMessage text={aiResponse.agentMessage} />
                         </div>
                     )}
 
-                    {/* Картки релевантних подій нижче під текстом */}
+                    {/* Традиційні картки підібраних подій з бази */}
                     {aiResponse.events.length > 0 && (
                         <div>
                             <div className="flex items-center gap-2 px-1 mb-2">
                                 <Sparkles className="w-3.5 h-3.5 text-slate-400"/>
                                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.1em]">
-                                    Підібрані події
+                                    Додаткові результати
                                 </span>
                             </div>
 
@@ -250,19 +272,22 @@ export default function SearchBar({
                                             router.push(`/events/${event.id}`);
                                             setShowDropdown(false);
                                         }}
-                                        className="p-3 sm:px-4 sm:py-3 rounded-2xl cursor-pointer transition-colors hover:bg-[#7c4dff]/8"
+                                        className="p-3 sm:px-4 sm:py-3 rounded-2xl cursor-pointer transition-colors hover:bg-[#7c4dff]/5 flex justify-between items-center"
                                     >
-                                        <div className="font-bold text-sm text-[#1a1535] hover:text-[#7c4dff] transition-colors">
-                                            {event.title}
+                                        <div>
+                                            <div className="font-bold text-sm text-[#1a1535] hover:text-[#7c4dff] transition-colors">
+                                                {event.title}
+                                            </div>
+                                            <div className="flex flex-wrap gap-3 text-slate-500 text-[11px] mt-1 font-medium">
+                                                <span className="flex items-center gap-1">
+                                                    <MapPin className="w-3 h-3 text-slate-400"/> {event.city}
+                                                </span>
+                                                <span className="flex items-center gap-1">
+                                                    <Calendar className="w-3 h-3 text-slate-400"/> {event.date}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="flex flex-wrap gap-3 text-slate-500 text-[11px] mt-1 font-medium">
-                                            <span className="flex items-center gap-1">
-                                                <MapPin className="w-3 h-3 text-slate-400"/> {event.city}
-                                            </span>
-                                            <span className="flex items-center gap-1">
-                                                <Calendar className="w-3 h-3 text-slate-400"/> {event.date}
-                                            </span>
-                                        </div>
+                                        <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
                                     </div>
                                 ))}
                             </div>
