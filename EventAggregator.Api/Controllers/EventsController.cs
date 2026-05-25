@@ -4,6 +4,8 @@ using EventAggregator.Domain.Models;
 using EventAggregator.Api.DTOs;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using EventAggregator.Application.Services;
+using System.Text;
+using System.Text.Json;
 
 namespace EventAggregator.Api.Controllers
 {
@@ -12,35 +14,93 @@ namespace EventAggregator.Api.Controllers
     public class EventsController : ControllerBase
     {
         private readonly ElasticsearchClient _client;
+        private readonly HttpClient _httpClient;
+        private readonly string _mcpBridgeUrl;
 
-        public EventsController(ElasticsearchClient client)
+        // Додаємо HttpClient та IConfiguration через DI конструктора
+        public EventsController(ElasticsearchClient client, HttpClient httpClient, IConfiguration config)
         {
             _client = client;
+            _httpClient = httpClient;
+            // Беремо URL мікросервісу з конфігурації (яку ми прописали в docker-compose)
+            _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
         }
 
         [HttpGet("ai-search")]
-        public async Task<IActionResult> AiSearch([FromQuery] string? query, [FromServices] GeminiService gemini, [FromQuery] int size = 5)
+        public async Task<IActionResult> AiSearch([FromQuery] string? query)
         {
-            if (string.IsNullOrWhiteSpace(query)) return Ok(Enumerable.Empty<EventDto>());
+            if (string.IsNullOrWhiteSpace(query)) 
+                return Ok(new { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
 
-            var intent = await gemini.GetSearchIntentAsync(query);
+            try
+            {
+                var requestBody = new { query = query };
+                var content = new StringContent(
+                    JsonSerializer.Serialize(requestBody), 
+                    Encoding.UTF8, 
+                    "application/json"
+                );
 
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                .Size(size)
-                .Query(q => q.Bool(b =>
+                // 1. Робимо запит до нашого Node.js MCP проксі-мосту
+                var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
+                
+                if (!response.IsSuccessStatusCode)
                 {
-                    if (!string.IsNullOrWhiteSpace(intent.City))
-                        b.Filter(f => f.Term(t => t.Field("city.keyword").Value(intent.City.ToUpper())));
+                    return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
+                }
 
-                    if (!string.IsNullOrWhiteSpace(intent.Category))
-                        b.Filter(f => f.Term(t => t.Field("category.keyword").Value(intent.Category.ToLower())));
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(jsonResponse);
+                
+                // 2. Витягуємо людяну текстову відповідь, згенеровану Gemini через MCP
+                var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
+                
+                // 3. Витягуємо сирі дані з інструменту MCP Elasticsearch
+                var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
 
-                    if (!string.IsNullOrWhiteSpace(intent.Keywords))
-                        b.Must(m => m.MultiMatch(mm => mm.Fields(new[] { "title^2", "description" }).Query(intent.Keywords).Fuzziness(new Fuzziness("AUTO"))));
-                }))
-            );
+                // Перетворюємо результат виконання інструменту назад у DTO для фронтенду
+                var eventsList = new List<EventDto>();
+                
+                if (rawMcpData.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in rawMcpData.EnumerateArray())
+                    {
+                        // Текст від MCP-сервера Elastic зазвичай приходить у властивості "text" у форматі рядка JSON
+                        if (item.TryGetProperty("text", out var textProp))
+                        {
+                            var hitText = textProp.GetString();
+                            try
+                            {
+                                // Десеріалізуємо сирий документ у нашу доменну модель ScrapedEvent
+                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(hitText, new JsonSerializerOptions
+                                {
+                                    PropertyNameCaseInsensitive = true
+                                });
 
-            return response.IsValidResponse ? Ok(response.Documents.Select(d => d.ToDto())) : StatusCode(500, response.DebugInformation);
+                                if (scrapedEvent != null)
+                                {
+                                    eventsList.Add(scrapedEvent.ToDto());
+                                }
+                            }
+                            catch (JsonException)
+                            {
+                                // Якщо формат всередині text відрізняється, пропускаємо або логуємо
+                            }
+                        }
+                    }
+                }
+
+                // 4. Повертаємо єдину структуровану відповідь для нашого UI
+                return Ok(new 
+                { 
+                    AgentMessage = agentMessage, 
+                    Events = eventsList 
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
+            }
         }
 
         [HttpGet("search")]

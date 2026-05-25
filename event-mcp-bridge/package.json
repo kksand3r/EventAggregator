@@ -1,0 +1,12 @@
+﻿{
+  "name": "event-mcp-bridge",
+  "version": "1.0.0",
+  "description": "MCP Bridge between C# API, Gemini and Elasticsearch",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "@elastic/mcp-server-elasticsearch": "^1.0.0",
+    "express": "^4.19.2"
+  }
+}

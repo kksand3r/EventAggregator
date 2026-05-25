@@ -25,6 +25,8 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
+builder.Services.AddHttpClient();
+
 builder.Services.AddHttpClient<GeminiService>();
 
 var app = builder.Build();

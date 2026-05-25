@@ -16,6 +16,24 @@ services:
       - event_network
     restart: unless-stopped
 
+  # Новий мікросервіс-міст для MCP архітектури
+  event-mcp-bridge:
+    build:
+      context: ./event-mcp-bridge
+    container_name: event_mcp_bridge
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=gemini-1.5-flash
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - PORT=5001
+    ports:
+      - "5001:5001"
+    depends_on:
+      - elasticsearch
+    networks:
+      - event_network
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -27,8 +45,10 @@ services:
       - Elasticsearch__Url=http://elasticsearch:9200
       - ASPNETCORE_ENVIRONMENT=Production
       - Gemini__ApiKey=${GEMINI_API_KEY}
+      - McpBridgeUrl=http://event-mcp-bridge:5001  # Передаємо лінк на мікросервіс всередині мережі docker
     depends_on:
       - elasticsearch
+      - event-mcp-bridge
     networks:
       - event_network
     restart: unless-stopped
@@ -40,7 +60,7 @@ services:
     container_name: event_aggregator_collector
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
-      - Gemini__ApiKey=${GEMINI_API_KEY:-"}
+      - Gemini__ApiKey=${GEMINI_API_KEY:-""}
     depends_on:
       - elasticsearch
     networks:
