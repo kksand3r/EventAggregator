@@ -232,6 +232,8 @@ public class KarabasScraper : IEventScraper
                         ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
                     };
 
+                    newEvent.GenerateDeterministicId();
+                    
                     lock (allEvents) { allEvents.Add(newEvent); }
                     _logger.LogInformation("✅ Karabas: {Title} [{City}]", newEvent.Title, newEvent.City);
                     

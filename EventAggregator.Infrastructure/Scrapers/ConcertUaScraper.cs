@@ -131,6 +131,8 @@ public class ConcertUaScraper : IEventScraper
                     ImageUrl = details.GetProperty("ImageUrl").GetString() ?? ""
                 };
 
+                newEvent.GenerateDeterministicId();
+                
                 lock (allCollectedEvents)
                 {
                     allCollectedEvents.Add(newEvent);
