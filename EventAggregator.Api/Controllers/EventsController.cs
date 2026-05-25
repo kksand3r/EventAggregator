@@ -54,8 +54,7 @@ namespace EventAggregator.Api.Controllers
                 )
             );
 
-            if (!response.IsValidResponse)
-                return StatusCode(500, response.DebugInformation);
+            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
 
             return Ok(response.Documents.Select(d => d.ToDto()));
         }

@@ -1,5 +1,4 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventAggregator.Collector", "EventAggregator.Collector\EventAggregator.Collector.csproj", "{538515B6-541D-4A76-A797-CC0A6CB5DC5E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventAggregator.Domain", "EventAggregator.Domain\EventAggregator.Domain.csproj", "{65DA0451-A0C8-4CEB-95D7-2CFBD366E00B}"

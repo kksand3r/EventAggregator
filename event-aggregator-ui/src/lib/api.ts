@@ -1,9 +1,4 @@
-/**
- * API client for EventAggregator backend.
- * Base URL: NEXT_PUBLIC_API_URL (e.g. http://localhost:5103)
- */
-
-import {generateEventImageBase64} from "./imageUtils";
+import { formatCategory } from "./categoryMapping";
 
 export interface EventDto {
     id: string;

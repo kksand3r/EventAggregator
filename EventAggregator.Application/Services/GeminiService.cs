@@ -5,6 +5,12 @@ using EventAggregator.Domain.Models;
 
 namespace EventAggregator.Application.Services
 {
+    public class SearchIntent
+    {
+        public string[] Keywords { get; set; } = Array.Empty<string>();
+        public string? City { get; set; }
+    }
+
     public class GeminiService
     {
         private readonly string _apiKey;
@@ -33,15 +39,25 @@ namespace EventAggregator.Application.Services
             {
                 contents = new[]
                 {
-                    new
-                    {
-                        parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } }
-                    }
+                    new { parts = new[] { new { text = $"{systemPrompt}\n\nЗапит: {userPrompt}" } } }
                 },
-                generationConfig = new { temperature = 0.4, maxOutputTokens = 150 }
+                generationConfig = new { temperature = 0.2, maxOutputTokens = 150 }
             };
 
-            return await SendGeminiRequest(requestBody, "Summarize");
+            var rawResult = await SendGeminiRequest(requestBody, "SearchIntent");
+
+            try
+            {
+                var cleanedJson = rawResult.Replace("```json", "").Replace("```", "").Trim();
+                return JsonSerializer.Deserialize<SearchIntent>(cleanedJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                }) ?? new SearchIntent();
+            }
+            catch
+            {
+                return new SearchIntent();
+            }
         }
 
         public async Task<AiSearchIntent> GetSearchIntentAsync(string userPrompt)
@@ -172,25 +188,23 @@ namespace EventAggregator.Application.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    var error = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[Gemini Error - {context}] Status: {response.StatusCode}, Details: {error}");
+                    var details = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"[Gemini Error - {context}] Status: {response.StatusCode}, Details: {details}");
                     return "Тимчасово не вдалося завантажити AI-аналіз.";
                 }
 
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
 
-                var result = doc.RootElement
+                return doc.RootElement
                     .GetProperty("candidates")[0]
                     .GetProperty("content")
                     .GetProperty("parts")[0]
-                    .GetProperty("text").GetString();
-
-                return result?.Trim().Trim('"').Trim('«').Trim('»') ?? "";
+                    .GetProperty("text").GetString() ?? "";
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Gemini Exception - {context}] Message: {ex.Message}");
+                Console.WriteLine($"[Gemini Exception - {context}] {ex.Message}");
                 return "Помилка системи AI.";
             }
         }

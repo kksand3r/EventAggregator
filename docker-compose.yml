@@ -1,8 +1,9 @@
-﻿version: '8'
+﻿version: '3.8'
+
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
-    container_name: event_aggregator_search
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: event_aggregator_elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
@@ -11,6 +12,44 @@ services:
       - "9200:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
+    networks:
+      - event_network
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: EventAggregator.Api/Dockerfile
+    container_name: event_aggregator_api
+    ports:
+      - "5194:8080"
+    environment:
+      - Elasticsearch__Url=http://elasticsearch:9200
+      - ASPNETCORE_ENVIRONMENT=Production
+      - Gemini__ApiKey=${GEMINI_API_KEY}
+    depends_on:
+      - elasticsearch
+    networks:
+      - event_network
+    restart: unless-stopped
+
+  collector:
+    build:
+      context: .
+      dockerfile: EventAggregator.Collector/Dockerfile
+    container_name: event_aggregator_collector
+    environment:
+      - Elasticsearch__Url=http://elasticsearch:9200
+      - Gemini__ApiKey=${GEMINI_API_KEY:-"}
+    depends_on:
+      - elasticsearch
+    networks:
+      - event_network
 
 volumes:
   es_data:
+    driver: local
+
+networks:
+  event_network:
+    driver: bridge

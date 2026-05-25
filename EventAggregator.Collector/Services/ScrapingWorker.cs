@@ -1,4 +1,9 @@
-﻿using Microsoft.Extensions.Hosting;
+﻿using System;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 using EventAggregator.Application.Services;
@@ -26,14 +31,16 @@ public class ScrapingWorker : BackgroundService
         _logger.LogInformation("🌐 Підготовка браузера для Cron-завдання...");
         try 
         {
-            await new BrowserFetcher().DownloadAsync();
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                await new BrowserFetcher().DownloadAsync();
+            }
         }
         catch (Exception ex)
         {
             _logger.LogCritical(ex, "❌ Не вдалося підготувати браузер.");
             throw;
         }
-
         await base.StartAsync(cancellationToken);
     }
 
@@ -41,31 +48,63 @@ public class ScrapingWorker : BackgroundService
     {
         _logger.LogInformation("🚀 Початок сесії скрайпінгу: {time}", DateTimeOffset.Now);
 
+        string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
+
         try
         {
-            using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions 
-                   { 
-                       Headless = true,
-                       Args = new[] { "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage" }
-                   }))
+            LaunchOptions launchOptions;
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                launchOptions = new LaunchOptions 
+                { 
+                    Headless = true,
+                    ExecutablePath = "/usr/bin/chromium",
+                    Args = new[] 
+                    { 
+                        "--no-sandbox", 
+                        "--disable-setuid-sandbox", 
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-software-rasterizer",
+                        "--disable-blink-features=AutomationControlled",
+                        "--window-size=1920,1080",
+                        !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : ""
+                    }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray()
+                };
+            }
+            else
+            {
+                launchOptions = new LaunchOptions 
+                { 
+                    Headless = true,
+                    Args = new[] 
+                    { 
+                        "--no-sandbox", 
+                        "--disable-setuid-sandbox", 
+                        "--disable-dev-shm-usage", 
+                        "--disable-blink-features=AutomationControlled",
+                        "--window-size=1920,1080",
+                        !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : ""
+                    }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray()
+                };
+            }
+
+            using (var browser = await Puppeteer.LaunchAsync(launchOptions))
             {
                 await _scrapingService.ProcessAllSourcesAsync(browser, stoppingToken);
                 await browser.CloseAsync();
             }
-
-            _logger.LogInformation("✅ Скрайпінг успішно завершено. Завершення процесу...");
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("⚠️ Операція була скасована.");
+            _logger.LogInformation("✅ Скрайпінг успішно завершено.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Критична помилка під час виконання Cron-завдання.");
+            _logger.LogError(ex, "❌ Критична помилка під час виконання скрайпінгу.");
         }
         finally
         {
             _hostApplicationLifetime.StopApplication();
+            Environment.Exit(0);
         }
     }
 }

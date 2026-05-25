@@ -1,5 +1,3 @@
-import type { NextConfig } from "next";
-
 const nextConfig = {
   images: {
     remotePatterns: [
@@ -12,6 +10,14 @@ const nextConfig = {
         hostname: '**',
       },
     ],
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://52.236.142.128:5194/api/:path*',
+      },
+    ];
   },
 };
 
