@@ -39,6 +39,11 @@ export interface MetadataResponse {
     categories: string[];
 }
 
+export interface AiSearchResponse {
+    agentMessage: string;
+    events: EventListItem[];
+}
+
 function getBaseUrl(): string {
     return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5103";
 }
@@ -195,20 +200,29 @@ export async function fetchEventAiSummary(id: string): Promise<string> {
     }
 }
 
-export async function fetchAiSearchSuggestions(query: string, size = 5): Promise<EventListItem[]> {
-    if (!query.trim()) return [];
+export async function fetchAiSearchSuggestions(query: string, size = 5): Promise<AiSearchResponse> {
+    if (!query.trim()) return { agentMessage: "", events: [] };
+
     const queryParams = new URLSearchParams();
     queryParams.set("query", query);
     queryParams.set("size", String(size));
 
     try {
         const res = await fetch(`${getBaseUrl()}/api/events/ai-search?${queryParams.toString()}`);
-        if (!res.ok) return [];
-        const data = (await res.json()) as EventDto[];
-        return data.map(dtoToItem);
+        if (!res.ok) return { agentMessage: "Вибачте, виникла помилка при зверненні до ШІ.", events: [] };
+
+        const data = await res.json();
+
+        // Бекенд віддає { agentMessage: "...", events: [...] } 
+        // або rawMcpData, залежно від того, як ти назвав поле у C# контролері.
+        // Припустимо, ти назвав масив events у контролері.
+        return {
+            agentMessage: data.agentMessage || "",
+            events: Array.isArray(data.events) ? data.events.map(dtoToItem) : []
+        };
     } catch (error) {
         console.error("AI Search error:", error);
-        return [];
+        return { agentMessage: "Помилка з'єднання.", events: [] };
     }
 }
 
