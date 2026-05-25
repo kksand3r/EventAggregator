@@ -13,6 +13,62 @@ interface SearchBarProps {
     placeholder?: string;
 }
 
+// 🌟 Переносимо всеїдний парсер посилань сюди, щоб він працював всередині Дропдауна
+function RenderAiDropdownMessage({ text }: { text: string }) {
+    if (!text) return null;
+
+    const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const lines = text.split('\n');
+
+    return (
+        <div className="space-y-1.5">
+            {lines.map((line, lineIdx) => {
+                // Вичищаємо маркерні зірочки списку (*), які додає ШІ
+                let cleanLine = line.replace(/^\s*[\*\-]\s+/, "");
+
+                const parts = [];
+                let lastIndex = 0;
+                let match;
+
+                regex.lastIndex = 0;
+
+                while ((match = regex.exec(cleanLine)) !== null) {
+                    if (match.index > lastIndex) {
+                        parts.push(cleanLine.substring(lastIndex, match.index));
+                    }
+
+                    const linkText = match[1];
+                    const linkUrl = match[2];
+
+                    parts.push(
+                        <Link
+                            key={match.index}
+                            href={linkUrl}
+                            className="text-[#7c4dff] font-bold underline hover:text-[#5e35b1] transition-all bg-[#7c4dff]/6 px-1.5 py-0.5 rounded-lg mx-0.5 inline-block"
+                        >
+                            {linkText}
+                        </Link>
+                    );
+                    lastIndex = regex.lastIndex;
+                }
+
+                if (lastIndex < cleanLine.length) {
+                    parts.push(cleanLine.substring(lastIndex));
+                }
+
+                // Якщо рядок порожній — пропускаємо, щоб не розтягувати дропдаун
+                if (!cleanLine.trim()) return null;
+
+                return (
+                    <p key={lineIdx} className="text-sm text-[#1a1535]/90 leading-relaxed font-medium">
+                        {parts.length > 0 ? parts : cleanLine}
+                    </p>
+                );
+            })}
+        </div>
+    );
+}
+
 export default function SearchBar({
                                       value: externalValue,
                                       onChange: externalOnChange,
