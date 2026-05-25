@@ -183,7 +183,7 @@ namespace EventAggregator.Api.Controllers
                 .Index("events")
                 .Query(q => q
                     .Term(t => t
-                        .Field("id") // 🌟 Передаємо ім'я поля рядком, щоб компілятор C# не сварився на модель
+                        .Field("id.keyword")
                         .Value(id)
                     )
                 )
