@@ -14,14 +14,10 @@ const transport = new StdioClientTransport({
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
     env: {
         ...process.env,
-        ES_URL: ELASTIC_URL,
-        // Вимикаємо або змушуємо клієнт не шпетити сумісність з v9
-        ELASTIC_CLIENT_PASSTHROUGH_REQUEST_HEADERS: "false",
-        // Додатково можна примусово вказати версію API сумісності, якщо перша змінна не закриє проблему повністю:
-        Accept: "application/vnd.elasticsearch+json; compatible-with=8",
-        "Content-Type": "application/json"
+        ES_URL: ELASTIC_URL
     }
 });
+
 const mcpClient = new Client({
     name: "eventspace-mcp-bridge",
     version: "1.0.0"
@@ -72,83 +68,73 @@ app.post('/api/mcp-search', async (req, res) => {
         const functionDeclarations = mcpTools.tools.map(tool => ({
             name: tool.name,
             description: tool.description,
-            parameters: cleanSchema(tool.inputSchema)
+            parameters: cleanSchema(tool.inputSchema)  // ✅ очищена схема
         }));
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        // 1. Ініціалізуємо масив історії
-        let history = [
-            { role: "user", parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь.` }] }
-        ];
+        let geminiRequestBody = {
+            contents: [{ parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь.` }] }],
+            tools: [{ functionDeclarations }],
+            toolConfig: { functionCallingConfig: { mode: "AUTO" } }
+        };
 
-        let iterations = 0;
-        const maxIterations = 5; // Захист від нескінченного циклу
-        let finalTxt = "";
-        let finalRawData = [];
+        let response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(geminiRequestBody)
+        });
 
-        // 2. Запускаємо агентський цикл
-        while (iterations < maxIterations) {
-            iterations++;
+        let jsonResponse = await response.json();
+        console.log("[Gemini Response]:", JSON.stringify(jsonResponse, null, 2));
+        let candidate = jsonResponse.candidates?.[0];
+        let part = candidate?.content?.parts?.[0];
+        console.log("[Part]:", JSON.stringify(part, null, 2));
 
-            let geminiRequestBody = {
-                contents: history,
-                tools: [{ functionDeclarations }],
-                toolConfig: { functionCallingConfig: { mode: "AUTO" } }
+        if (part?.functionCall) {
+            const { name, args } = part.functionCall;
+            const toolResult = await mcpClient.callTool({ name, arguments: args });
+
+            const finalRequestBody = {
+                contents: [
+                    { role: "user", parts: [{ text: query }] },
+                    { role: "model", parts: [part] },
+                    {
+                        role: "user",
+                        parts: [{
+                            functionResponse: {
+                                name: name,
+                                response: { output: JSON.stringify(toolResult.content) }
+                            }
+                        }]
+                    }
+                ]
             };
 
-            let response = await fetch(url, {
+            let finalResponse = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(geminiRequestBody)
+                body: JSON.stringify(finalRequestBody)
             });
 
-            let jsonResponse = await response.json();
-            let candidate = jsonResponse.candidates?.[0];
-            let part = candidate?.content?.parts?.[0];
+            let finalJson = await finalResponse.json();
+            console.log("[Gemini Final Response]:", JSON.stringify(finalJson, null, 2));
+            let finalTxt = finalJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-            if (!part) break;
-
-            // Додаємо відповідь ШІ в історію
-            history.push({ role: "model", parts: candidate.content.parts });
-
-            // Якщо ШІ хоче викликати інструмент
-            if (part.functionCall) {
-                const { name, args, id } = part.functionCall;
-                console.log(`[MCP Action Step ${iterations}]: ШІ викликає '${name}' з ID '${id}'`);
-
-                const toolResult = await mcpClient.callTool({ name, arguments: args });
-
-                // Зберігаємо результати саме пошуку, щоб віддати їх на фронт
-                if (name === "search" || finalRawData.length === 0) {
-                    finalRawData = toolResult.content;
-                }
-
-                // Додаємо результат інструменту в історію для наступного кроку
-                history.push({
-                    role: "user",
-                    parts: [{
-                        functionResponse: {
-                            name: name,
-                            id: id, // ОБОВ'ЯЗКОВО
-                            response: { content: toolResult.content } // Не через JSON.stringify!
-                        }StdioClientTransport
-                    }]
-                });
-            } else {
-                // Якщо функцій немає, значить це фінальний текст для користувача
-                finalTxt = part.text || "";
-                break;
-            }
+            return res.json({
+                agentMessage: finalTxt,
+                rawMcpData: toolResult.content
+            });
         }
 
         return res.json({
-            agentMessage: finalTxt,
-            rawMcpData: finalRawData
+            agentMessage: part?.text || "Не вдалося отримати аналіз.",
+            rawMcpData: []
         });
 
     } catch (error) {
-        console.error("[Bridge Error]:", error);
+        console.error("[Bridge Error] Message:", error.message);
+        console.error("[Bridge Error] Stack:", error.stack);
         res.status(500).json({ error: error.message });
     }
 });

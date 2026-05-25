@@ -71,34 +71,20 @@ namespace EventAggregator.Api.Controllers
                             var hitText = textProp.GetString();
                             try
                             {
-                                // Парсимо як загальний документ Elasticsearch
-                                using var esDoc = JsonDocument.Parse(hitText);
-        
-                                // Перевіряємо, чи є всередині структура hits.hits
-                                if (esDoc.RootElement.TryGetProperty("hits", out var rootHits) && 
-                                    rootHits.TryGetProperty("hits", out var hitsArray))
+                                // Десеріалізуємо сирий документ у нашу доменну модель ScrapedEvent
+                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(hitText, new JsonSerializerOptions
                                 {
-                                    foreach (var hit in hitsArray.EnumerateArray())
-                                    {
-                                        // Сама подія лежить у полі _source
-                                        if (hit.TryGetProperty("_source", out var sourceProp))
-                                        {
-                                            var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(
-                                                sourceProp.GetRawText(), 
-                                                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                                            );
+                                    PropertyNameCaseInsensitive = true
+                                });
 
-                                            if (scrapedEvent != null)
-                                            {
-                                                eventsList.Add(scrapedEvent.ToDto());
-                                            }
-                                        }
-                                    }
+                                if (scrapedEvent != null)
+                                {
+                                    eventsList.Add(scrapedEvent.ToDto());
                                 }
                             }
                             catch (JsonException)
                             {
-                                // Ігноруємо, якщо MCP повернув звичайний текст, а не JSON
+                                // Якщо формат всередині text відрізняється, пропускаємо або логуємо
                             }
                         }
                     }
