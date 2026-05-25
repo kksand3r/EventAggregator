@@ -1,10 +1,6 @@
 ﻿import express from 'express';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json());
@@ -13,16 +9,32 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
-// 🌟 ВИПРАВЛЕННЯ: Генеруємо точний абсолютний file:// URL для Node.js ESM імпорту
-const patchPath = path.resolve(__dirname, 'patch-elastic.js');
-const patchUrl = pathToFileURL(patchPath).href;
-
-console.log(`[MCP Bridge] Injecting patch from: ${patchUrl}`);
+// 🌟 МАГІЧНИЙ ФІКС: Зашиваємо код патчу прямо в рядок, 
+// щоб не створювати жодних додаткових файлів і не залежати від Dockerfile!
+const patchCode = `
+import http from 'http';
+const originalRequest = http.request;
+http.request = function (url, options, callback) {
+    let opt = options || url;
+    if (opt && opt.headers) {
+        for (const key of Object.keys(opt.headers)) {
+            if (key.toLowerCase() === 'accept' || key.toLowerCase() === 'content-type') {
+                if (typeof opt.headers[key] === 'string' && opt.headers[key].includes('compatible-with=9')) {
+                    opt.headers[key] = opt.headers[key].replace('compatible-with=9', 'compatible-with=8');
+                }
+            }
+        }
+    }
+    return originalRequest.call(this, url, opt, callback);
+};
+`;
+// Перетворюємо код у віртуальний Data URI файл
+const patchUrl = 'data:text/javascript;base64,' + Buffer.from(patchCode).toString('base64');
 
 const transport = new StdioClientTransport({
     command: "node",
     args: [
-        "--import", patchUrl, // Передаємо як file:///app/patch-elastic.js
+        "--import", patchUrl, // Інжектуємо наш віртуальний скрипт
         "./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"
     ],
     env: {
@@ -88,7 +100,7 @@ app.post('/api/mcp-search', async (req, res) => {
         let conversationHistory = [
             {
                 role: "user",
-                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Завжди обмежуй параметр size до максимум 5-10 результатів.` }]
+                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Обмежуй параметри 'size' до максимум 5-10 результатів.` }]
             }
         ];
 
