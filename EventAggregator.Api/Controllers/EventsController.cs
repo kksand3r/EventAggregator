@@ -17,12 +17,10 @@ namespace EventAggregator.Api.Controllers
         private readonly HttpClient _httpClient;
         private readonly string _mcpBridgeUrl;
 
-        // Додаємо HttpClient та IConfiguration через DI конструктора
         public EventsController(ElasticsearchClient client, HttpClient httpClient, IConfiguration config)
         {
             _client = client;
             _httpClient = httpClient;
-            // Беремо URL мікросервісу з конфігурації (яку ми прописали в docker-compose)
             _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
         }
 
@@ -41,24 +39,17 @@ namespace EventAggregator.Api.Controllers
                     "application/json"
                 );
 
-                // 1. Робимо запит до нашого Node.js MCP проксі-мосту
                 var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
                 
                 if (!response.IsSuccessStatusCode)
-                {
                     return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
-                }
 
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
                 
-                // 2. Витягуємо людяну текстову відповідь, згенеровану Gemini через MCP
                 var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
-                
-                // 3. Витягуємо сирі дані з інструменту MCP Elasticsearch
                 var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
 
-                // Перетворюємо результат виконання інструменту назад у DTO для фронтенду
                 var eventsList = new List<EventDto>();
                 
                 if (rawMcpData.ValueKind == JsonValueKind.Array)
@@ -72,16 +63,13 @@ namespace EventAggregator.Api.Controllers
             
                             try
                             {
-                                // 1. Парсимо сирий JSON від Elasticsearch
                                 using var esDoc = JsonDocument.Parse(hitText);
                 
-                                // 2. Шукаємо шлях: hits -> hits -> масив результатів
                                 if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
                                     topHits.TryGetProperty("hits", out var hitsArray))
                                 {
                                     foreach (var hit in hitsArray.EnumerateArray())
                                     {
-                                        // 3. Дані самої події лежать у полі _source
                                         if (hit.TryGetProperty("_source", out var source))
                                         {
                                             var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), new JsonSerializerOptions
@@ -90,9 +78,7 @@ namespace EventAggregator.Api.Controllers
                                             });
 
                                             if (scrapedEvent != null)
-                                            {
                                                 eventsList.Add(scrapedEvent.ToDto());
-                                            }
                                         }
                                     }
                                 }
@@ -105,7 +91,6 @@ namespace EventAggregator.Api.Controllers
                     }
                 }
 
-                // 4. Повертаємо єдину структуровану відповідь для нашого UI
                 return Ok(new 
                 { 
                     AgentMessage = agentMessage, 
@@ -133,7 +118,9 @@ namespace EventAggregator.Api.Controllers
                 ))
             );
 
-            return response.IsValidResponse ? Ok(response.Documents.Select(d => d.ToDto())) : StatusCode(500, response.DebugInformation);
+            return response.IsValidResponse
+                ? Ok(response.Documents.Select(d => d.ToDto()))
+                : StatusCode(500, response.DebugInformation);
         }
 
         [HttpGet("{id}/ai-summary")]
@@ -149,44 +136,47 @@ namespace EventAggregator.Api.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] string? city, [FromQuery] string? category, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> GetAll(
+            [FromQuery] string? city,
+            [FromQuery] string? category,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
             int from = (page - 1) * pageSize;
             var now = DateTime.UtcNow;
+
+            // ✅ ВИПРАВЛЕННЯ: збираємо всі фільтри в один список і передаємо разом,
+            // бо кожен окремий виклик b.Filter(...) перезаписує попередній.
+            var filters = new List<Action<QueryDescriptor<ScrapedEvent>>>
+            {
+                f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
+            };
+
+            if (!string.IsNullOrWhiteSpace(city) && city != "All")
+                filters.Add(f => f.Term(t => t.Field("city.keyword").Value(city.ToUpper())));
+
+            if (!string.IsNullOrWhiteSpace(category) && category != "All")
+                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .From(from)
                 .Size(pageSize)
                 .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Asc)))
-                .Query(q => q.Bool(b =>
-                {
-                    b.Filter(f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now))));
-                    
-                    if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                        b.Filter(f => f.Term(t => t.Field("city.keyword").Value(city.ToUpper())));
-                    
-                    if (!string.IsNullOrWhiteSpace(category) && category != "All")
-                        b.Filter(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
-                }))
+                .Query(q => q.Bool(b => b.Filter(filters.ToArray())))
             );
 
-            return response.IsValidResponse 
-                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) }) 
+            return response.IsValidResponse
+                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) })
                 : StatusCode(500, response.DebugInformation);
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(string id)
         {
-            // Найшвидший пошук за системним мета-полем _id
             var response = await _client.GetAsync<ScrapedEvent>("events", id);
 
             if (response.IsValidResponse && response.Source != null)
-            {
-                // Опціонально: якщо ToDto() потребує ID, можна призначити його перед конвертацією
-                // response.Source.Id = response.Id; 
                 return Ok(response.Source.ToDto());
-            }
 
             return NotFound();
         }
@@ -235,7 +225,7 @@ namespace EventAggregator.Api.Controllers
             var response = await _client.UpdateAsync(request);
             return response.IsValidResponse ? Ok() : StatusCode(500, response.DebugInformation);
         }
-        
+
         [HttpGet("archive")]
         public async Task<IActionResult> GetArchive([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
@@ -247,12 +237,12 @@ namespace EventAggregator.Api.Controllers
                 .Size(pageSize)
                 .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Desc)))
                 .Query(q => q.Bool(b => b
-                    .Filter(f => f.Range(r => r.DateRange(dr => dr.Field(f => f.ParsedDate).Lt(now))))
+                    .Filter(f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Lt(now))))
                 ))
             );
 
-            return response.IsValidResponse 
-                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) }) 
+            return response.IsValidResponse
+                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) })
                 : StatusCode(500, response.DebugInformation);
         }
     }
