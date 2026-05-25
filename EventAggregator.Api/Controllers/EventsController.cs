@@ -215,5 +215,36 @@ namespace EventAggregator.Api.Controllers
             var response = await _client.UpdateAsync(request);
             return response.IsValidResponse ? Ok() : StatusCode(500, response.DebugInformation);
         }
+        
+        [HttpGet("archive")]
+        public async Task<IActionResult> GetArchive(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            int from = (page - 1) * pageSize;
+            var now = DateTime.UtcNow;
+
+            var response = await _client.SearchAsync<ScrapedEvent>(s => s
+                .From(from)
+                .Size(pageSize)
+                .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Desc)))
+                .Query(q => q
+                    .Bool(b => b
+                        .Filter(f => f.Range(r => r.DateRange(dr => dr.Field(f => f.ParsedDate).Lt(now))))
+                    )
+                )
+            );
+
+            if (!response.IsValidResponse)
+                return StatusCode(500, response.DebugInformation);
+
+            return Ok(new
+            {
+                Total = response.Total,
+                Page = page,
+                PageSize = pageSize,
+                Data = response.Documents.Select(d => d.ToDto())
+            });
+        }
     }
 }
