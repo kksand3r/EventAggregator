@@ -13,6 +13,7 @@ interface SearchBarProps {
 }
 
 export default function SearchBar({
+export default function SearchBar({
                                       value: externalValue,
                                       onChange: externalOnChange,
                                       onModeChange,

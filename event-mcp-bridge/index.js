@@ -123,7 +123,7 @@ app.post('/api/mcp-search', async (req, res) => {
 
             return res.json({
                 agentMessage: finalTxt,
-                rawMcpData: toolResult.content
+                events: toolResult.content // Перейменовуємо на events, щоб Next.js його побачив
             });
         }
 
