@@ -13,11 +13,9 @@ interface SearchBarProps {
     placeholder?: string;
 }
 
-// 🌟 МАГІЯ ТУТ: Новий дизайнерський парсер для відповідей ШІ
 function RenderAiDropdownMessage({ text }: { text: string }) {
     if (!text) return null;
 
-    // 🌟 ЗМІНА: Прибрали /g, тепер регулярка чиста і працює детерміновано
     const regex = /\[([^\]]+)\]\(([^)]+)\)/;
     const lines = text.split('\n');
 
@@ -26,7 +24,6 @@ function RenderAiDropdownMessage({ text }: { text: string }) {
     const outroText: string[] = [];
 
     lines.forEach(line => {
-        // Очищаємо маркери списків (*, -, цифри типу 1.)
         let cleanLine = line.replace(/^\s*([\*\-]|(\d+\.))\s+/, "").trim();
         if (!cleanLine) return;
 
@@ -43,14 +40,12 @@ function RenderAiDropdownMessage({ text }: { text: string }) {
 
     return (
         <div className="space-y-3.5">
-            {/* Вступне слово асистента */}
             {introText.length > 0 && (
                 <p className="text-sm text-[#1a1535]/80 font-medium leading-relaxed whitespace-pre-line">
                     {introText.join('\n')}
                 </p>
             )}
 
-            {/* КЛІКАБЕЛЬНІ ШІ-КАРТКИ */}
             {eventLinks.length > 0 && (
                 <div className="grid grid-cols-1 gap-2 max-h-[240px] overflow-y-auto pr-1 custom-scrollbar">
                     {eventLinks.map((link, idx) => {
@@ -79,7 +74,6 @@ function RenderAiDropdownMessage({ text }: { text: string }) {
                 </div>
             )}
 
-            {/* Фінальне слово асистента */}
             {outroText.length > 0 && (
                 <p className="text-xs text-slate-500 font-medium pt-2 border-t border-slate-100 whitespace-pre-line">
                     {outroText.join('\n')}
@@ -93,7 +87,6 @@ export default function SearchBar({
                                       value: externalValue,
                                       onChange: externalOnChange,
                                       onModeChange,
-                                      placeholder = "Наприклад: куди піти з дівчиною?",
                                   }: SearchBarProps) {
     const [localValue, setLocalValue] = useState(externalValue);
     const [searchMode, setSearchMode] = useState<'ai' | 'classic'>('ai');
@@ -140,17 +133,13 @@ export default function SearchBar({
             return;
         }
 
-        // 🌟 ЗМІНА: Додаємо локальний прапорець для відстеження актуальності запиту
         let cancelled = false;
 
         const runSearch = async () => {
             setIsLoading(true);
             try {
                 const result = await fetchAiSearchSuggestions(localValue);
-
-                // 🌟 Якщо користувач вже встиг ввести щось інше — ігноруємо цей результат
                 if (cancelled) return;
-
                 setAiResponse(result);
                 setShowDropdown(Boolean(result.agentMessage) || result.events.length > 0);
             } catch (error) {
@@ -164,7 +153,6 @@ export default function SearchBar({
 
         const timer = setTimeout(runSearch, 600);
 
-        // 🌟 Обов'язково виставляємо в true при кожній зміні localValue
         return () => {
             cancelled = true;
             clearTimeout(timer);
@@ -199,7 +187,12 @@ export default function SearchBar({
                     onFocus={() => {
                         if (aiResponse.agentMessage || aiResponse.events.length > 0) setShowDropdown(true);
                     }}
-                    placeholder={searchMode === 'ai' ? "Запитайте ШІ..." : placeholder}
+                    {/* 🌟 ОНОВЛЕНО: Тепер текст підказки змінюється на 100% логічно відповідно до обраного типу */}
+                    placeholder={
+                        searchMode === 'ai'
+                            ? "Запитайте ШІ (наприклад: куди піти з дівчиною?)..."
+                            : "Пошук подій за назвою, артистом або містом..."
+                    }
                     className="w-full h-12 pl-[42px] pr-[110px] rounded-full border border-white/90 bg-white/70 backdrop-blur-[20px] text-sm font-medium text-[#1a1535] outline-none transition-all duration-200 shadow-[0_4px_12px_rgba(0,0,0,0.03)] appearance-none placeholder:text-gray-500 [&::-webkit-search-decoration]:hidden [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-results-button]:hidden [&::-webkit-search-results-decoration]:hidden"
                 />
 
@@ -247,12 +240,10 @@ export default function SearchBar({
                 </div>
             </div>
 
-            {/* Випадаюче вікно ШІ Рекомендацій */}
             {searchMode === 'ai' && showDropdown && (aiResponse.agentMessage || aiResponse.events.length > 0) && (
                 <div
                     className="absolute top-14 left-0 right-0 bg-white/95 backdrop-blur-[30px] rounded-[2rem] p-5 border border-white/60 shadow-[0_24px_60px_rgba(26,21,53,0.14)] z-[100] flex flex-col gap-4 max-h-[500px] overflow-y-auto">
 
-                    {/* Текстова відповідь від ШІ Агента */}
                     {aiResponse.agentMessage && (
                         <div className="bg-gradient-to-br from-[#7c4dff]/5 to-[#5a4fa0]/2 rounded-2xl p-4 border border-[#7c4dff]/10">
                             <div className="flex items-center gap-2 mb-3">
@@ -267,7 +258,6 @@ export default function SearchBar({
                         </div>
                     )}
 
-                    {/* Традиційні картки підібраних подій з бази */}
                     {aiResponse.events.length > 0 && (
                         <div>
                             <div className="flex items-center gap-2 px-1 mb-2">
