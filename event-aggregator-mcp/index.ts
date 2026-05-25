@@ -1,89 +1,83 @@
-﻿import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+﻿import { GoogleGenAI } from "@google/genai";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import * as path from "path";
 
-const API_BASE_URL = "http://localhost:5103/api/events";
+// 1. Ініціалізація Gemini API (використовує офіційний новий SDK @google/genai)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const server = new McpServer({
-    name: "EventSpace-MCP",
-    version: "1.0.0"
-});
+async function runCli() {
+    // 2. Підключаємося до твого MCP-сервера подій
+    const transport = new StdioClientTransport({
+        command: "npx",
+        args: ["tsx", "index.ts"],
+        cwd: path.resolve("../event-aggregator-mcp")
+    });
+    const mcpClient = new Client({ name: "Gemini-Event-CLI", version: "1.0.0" }, { capabilities: {} });
+    await mcpClient.connect(transport);
 
-server.tool(
-    "search_events",
-    "Розумний пошук подій в базі EventSpace. LLM повинна витягнути місто та ключові слова із запиту користувача для точного пошуку.",
-    {
-        query: z.string().describe("Ключові слова для пошуку (назва події, гурт, жанр). Якщо запит містить ЛИШЕ місто (наприклад, 'події в Києві'), залиште це поле порожнім."),
-        city: z.string().optional().describe("Назва міста, витягнута з тексту (наприклад: 'Київ', 'Львів', 'Одеса'). Використовуй називний відмінок для міст, якщо це можливо."),
-        size: z.number().optional().default(10).describe("Кількість результатів")
-    },
-    async ({ query, city, size }) => {
-        try {
-            const url = new URL(`${API_BASE_URL}/search`);
-            if (query) url.searchParams.append("query", query);
-            if (city) url.searchParams.append("city", city);
-            url.searchParams.append("size", size.toString());
+    // 3. Отримуємо інструменти від MCP
+    const { tools: mcpTools } = await mcpClient.listTools();
 
-            const response = await fetch(url.toString());
-            if (!response.ok) throw new Error("Помилка API EventAggregator");
+    // Трансформуємо інструменти MCP під формат Gemini Function Declarations
+    const geminiTools = mcpTools.map(tool => ({
+        functionDeclarations: [{
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema // Zod-схема сумісна з JSON Schema, яку очікує Gemini
+        }]
+    }));
 
-            const data = await response.json();
-            return {
-                content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
-            };
-        } catch (error: any) {
-            return { content: [{ type: "text", text: `Помилка: ${error.message}` }] };
+    const userMessage = "куди піти погуляти в рівному";
+
+    // 4. Робимо запит до Gemini
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash", // або gemini-2.5-pro
+        contents: userMessage,
+        config: {
+            // Передаємо інструменти серверу подій у конфіг Gemini
+            tools: geminiTools
         }
+    });
+
+    const functionCalls = response.functionCalls;
+
+    // 5. Перевіряємо, чи Gemini хоче викликати інструмент пошуку подій
+    if (functionCalls && functionCalls.length > 0) {
+        const call = functionCalls[0];
+
+        console.log(`[Gemini вирішив шукати в базі]: місто = ${call.args.city}`);
+
+        // Викликаємо реальний пошук через твій MCP-сервер
+        const mcpResult = await mcpClient.callTool({
+            name: call.name,
+            arguments: call.args as any
+        });
+
+        // Відправляємо результат назад в Gemini, щоб отримати фінальну відповідь тексту
+        const finalResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [
+                { role: "user", parts: [{ text: userMessage }] },
+                { role: "model", parts: [{ functionCall: call }] },
+                {
+                    role: "user", // Відповідь інструменту для моделі маркується так або через спеціальний тип залежно від версії SDK
+                    parts: [{
+                        functionResponse: {
+                            name: call.name,
+                            response: { result: mcpResult.content }
+                        }
+                    }]
+                }
+            ]
+        });
+
+        console.log(`\nGemini: ${finalResponse.text}`);
+    } else {
+        console.log(`\nGemini: ${response.text}`);
     }
-);
 
-server.tool(
-    "get_event_summary",
-    "Отримати коротке AI-резюме для конкретної події за її ID",
-    {
-        eventId: z.string().describe("ID події з бази Elasticsearch")
-    },
-    async ({ eventId }) => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/${eventId}/ai-summary`);
-            if (!response.ok) {
-                if(response.status === 404) return { content: [{ type: "text", text: "Подію не знайдено." }] };
-                throw new Error("Помилка при генерації саммарі");
-            }
-
-            const data = await response.json();
-            return {
-                content: [{ type: "text", text: data.summary }] 
-            };
-        } catch (error: any) {
-            return { content: [{ type: "text", text: `Помилка: ${error.message}` }] };
-        }
-    }
-);
-
-server.tool(
-    "get_platform_stats",
-    "Отримати статистику подій по містах та категоріях",
-    {},
-    async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/stats`);
-            if (!response.ok) throw new Error("Помилка отримання статистики");
-
-            const data = await response.json();
-            return {
-                content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
-            };
-        } catch (error: any) {
-            return { content: [{ type: "text", text: `Помилка: ${error.message}` }] };
-        }
-    }
-);
-
-async function run() {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error("EventSpace MCP Server is running on stdio");
+    await transport.close();
 }
 
-run().catch(console.error);
+runCli().catch(console.error);
