@@ -33,6 +33,17 @@ public class KarabasScraper : IEventScraper
     private readonly string[] _categories =
         { "concerts", "theatres", "stand-up", "child", "clubs", "inshe", "festivals" };
 
+    private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "kyiv", "Київ" }, { "odesa", "Одеса" }, { "dnipro", "Дніпро" }, { "lviv", "Львів" },
+        { "kharkiv", "Харків" }, { "ivano-frankivsk", "Івано-Франківськ" }, { "vinnytsia", "Вінниця" },
+        { "poltava", "Полтава" }, { "zhytomyr", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
+        { "ternopil", "Тернопіль" }, { "chernivtsi", "Чернівці" }, { "chernihiv", "Чернігів" },
+        { "sumy", "Суми" }, { "khmelnytskyi", "Хмельницький" }, { "rivne", "Рівне" },
+        { "lutsk", "Луцьк" }, { "mykolaiv", "Миколаїв" }, { "uzhhorod", "Ужгород" },
+        { "kropyvnytskyi", "Кропивницький" }
+    };
+
     public KarabasScraper(ILogger<KarabasScraper> logger) => _logger = logger;
 
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
@@ -133,7 +144,6 @@ public class KarabasScraper : IEventScraper
                         }
                     }
                     
-                    
                     await Task.Delay(Random.Shared.Next(1000, 2000));
                 }
             }
@@ -228,6 +238,7 @@ public class KarabasScraper : IEventScraper
                         Date = rawDate,
                         ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
                         City = item.City.ToUpper(),
+                        CityUk = CityTranslations.GetValueOrDefault(item.City.ToLower(), item.City),
                         Category = item.Category,
                         ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
                     };

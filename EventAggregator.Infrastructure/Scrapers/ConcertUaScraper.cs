@@ -21,6 +21,17 @@ public class ConcertUaScraper : IEventScraper
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
+    private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "kyiv", "Київ" }, { "odesa", "Одеса" }, { "dnipro", "Дніпро" }, { "lviv", "Львів" },
+        { "kharkiv", "Харків" }, { "ivano-frankivsk", "Івано-Франківськ" }, { "vinnytsia", "Вінниця" },
+        { "poltava", "Полтава" }, { "zhytomyr", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
+        { "ternopil", "Тернопіль" }, { "chernivtsi", "Чернівці" }, { "chernihiv", "Чернігів" },
+        { "sumy", "Суми" }, { "khmelnytskyi", "Хмельницький" }, { "rivne", "Рівне" },
+        { "lutsk", "Луцьк" }, { "mykolaiv", "Миколаїв" }, { "uzhhorod", "Ужгород" },
+        { "kropyvnytskyi", "Кропивницький" }
+    };
+
     public ConcertUaScraper(ILogger<ConcertUaScraper> logger)
     {
         _logger = logger;
@@ -127,6 +138,7 @@ public class ConcertUaScraper : IEventScraper
                     Date = rawDate,
                     ParsedDate = DateParser.ParseUkrainianDate(rawDate),
                     City = item.CitySlug.ToUpper(),
+                    CityUk = CityTranslations.GetValueOrDefault(item.CitySlug.ToLower(), item.CitySlug),
                     Category = mappedCategory,
                     ImageUrl = details.GetProperty("ImageUrl").GetString() ?? ""
                 };

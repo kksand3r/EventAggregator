@@ -4,7 +4,6 @@ using Elastic.Clients.Elasticsearch.QueryDsl;
 using EventAggregator.Domain.Interfaces;
 using EventAggregator.Domain.Models;
 using Microsoft.Extensions.Logging;
-using Microsoft.AspNetCore.WebUtilities;
 
 namespace EventAggregator.Infrastructure.Repository;
 
@@ -30,8 +29,14 @@ public class ElasticEventRepository : IEventRepository
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
-                    .Keyword(k => k.Category)
+                    .Text(t => t.Category, g => g
+                        .Analyzer("ukrainian")
+                        .Fields(f => f
+                            .Keyword("keyword") 
+                        )
+                    )
                     .Keyword(k => k.City)
+                    .Text(t => t.CityUk, t => t.Analyzer("ukrainian"))
                     .Text(t => t.Title)
                     .Text(t => t.Description)
                 )
@@ -45,7 +50,6 @@ public class ElasticEventRepository : IEventRepository
 
         var response = await _client.BulkAsync(b => b
                 .Index(IndexName)
-                // 🌟 ВИПРАВЛЕННЯ: Використовуємо .Id(sEvent.Id) замість Base64
                 .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id)) 
             , ct);
 

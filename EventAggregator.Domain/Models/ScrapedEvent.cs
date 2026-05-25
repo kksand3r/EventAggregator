@@ -12,6 +12,7 @@ public class ScrapedEvent
     public string Date { get; set; } = string.Empty;
     public DateTime? ParsedDate { get; set; }
     public string City { get; set; } = string.Empty;
+    public string CityUk { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
