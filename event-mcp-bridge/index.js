@@ -64,11 +64,13 @@ app.post('/api/mcp-search', async (req, res) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(geminiRequestBody)
         });
-
+        
         let jsonResponse = await response.json();
+        console.log("[Gemini Response]:", JSON.stringify(jsonResponse, null, 2)); // ← додай тут
         let candidate = jsonResponse.candidates?.[0];
         let part = candidate?.content?.parts?.[0];
-
+        console.log("[Part]:", JSON.stringify(part, null, 2)); // ← і тут
+        
         if (part?.functionCall) {
             const { name, args } = part.functionCall;
             const toolResult = await mcpClient.callTool({ name, arguments: args });
