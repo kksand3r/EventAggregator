@@ -9,7 +9,8 @@ public class ScrapedEvent
     public string City { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public string Source { get; set; } = string.Empty; 
+    public string Source { get; set; } = string.Empty;
     public long ViewsCount { get; set; } = 0;
     public string ImageUrl { get; set; } = string.Empty;
+    public float[]? Embedding { get; set; }
 }

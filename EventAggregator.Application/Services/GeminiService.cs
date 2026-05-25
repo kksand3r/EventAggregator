@@ -22,7 +22,46 @@ namespace EventAggregator.Application.Services
             _model = config["Gemini:Model"] ?? "gemini-flash-lite-latest";
             _httpClient = httpClient;
         }
-        
+
+        public async Task<float[]?> GenerateEmbeddingAsync(string text)
+        {
+            try
+            {
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-004:embedContent?key={_apiKey}";
+                var requestBody = new
+                {
+                    model = "models/gemini-embedding-004",
+                    content = new { parts = new[] { new { text } } }
+                };
+                var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+                var content = new StringContent(JsonSerializer.Serialize(requestBody, jsonOptions), Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync(url, content);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var err = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"[Gemini Embedding Error] {response.StatusCode}: {err}");
+                    return null;
+                }
+
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(jsonResponse);
+                var values = doc.RootElement
+                    .GetProperty("embedding")
+                    .GetProperty("values")
+                    .EnumerateArray()
+                    .Select(v => v.GetSingle())
+                    .ToArray();
+
+                return values;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Gemini Embedding Exception] {ex.Message}");
+                return null;
+            }
+        }
+
         public async Task<SearchIntent> GetSearchIntentAsync(string userPrompt)
         {
             if (string.IsNullOrWhiteSpace(userPrompt)) return new SearchIntent();
@@ -48,9 +87,9 @@ namespace EventAggregator.Application.Services
             try
             {
                 var cleanedJson = rawResult.Replace("```json", "").Replace("```", "").Trim();
-                return JsonSerializer.Deserialize<SearchIntent>(cleanedJson, new JsonSerializerOptions 
-                { 
-                    PropertyNameCaseInsensitive = true 
+                return JsonSerializer.Deserialize<SearchIntent>(cleanedJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
                 }) ?? new SearchIntent();
             }
             catch
@@ -79,6 +118,12 @@ namespace EventAggregator.Application.Services
             return await SendGeminiRequest(requestBody, "Summarize");
         }
 
+        public async Task<string[]> GetSearchKeywordsAsync(string query)
+        {
+            var intent = await GetSearchIntentAsync(query);
+            return intent.Keywords;
+        }
+
         private async Task<string> SendGeminiRequest(object requestBody, string context)
         {
             try
@@ -90,7 +135,11 @@ namespace EventAggregator.Application.Services
                 var response = await _httpClient.PostAsync(url, content);
 
                 if (!response.IsSuccessStatusCode)
+                {
+                    var details = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"[Gemini Error - {context}] Status: {response.StatusCode}, Details: {details}");
                     return "Тимчасово не вдалося завантажити AI-аналіз.";
+                }
 
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
@@ -101,8 +150,9 @@ namespace EventAggregator.Application.Services
                     .GetProperty("parts")[0]
                     .GetProperty("text").GetString() ?? "";
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[Gemini Exception - {context}] {ex.Message}");
                 return "Помилка системи AI.";
             }
         }
