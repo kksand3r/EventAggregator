@@ -51,19 +51,37 @@ namespace EventAggregator.Api.Controllers
         }
 
         [HttpGet("search")]
-        public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] string? city, [FromQuery] int size = 20)
         {
-            if (string.IsNullOrWhiteSpace(query))
+            if (string.IsNullOrWhiteSpace(query) && string.IsNullOrWhiteSpace(city))
                 return Ok(Enumerable.Empty<EventDto>());
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .Size(size)
-                .Query(q => q.MultiMatch(mm => mm
-                    .Fields(new[] { "title^2", "description", "category" })
-                    .Query(query)
-                    .Fuzziness(new Fuzziness("AUTO"))
-                    .Type(TextQueryType.BestFields)
-                ))
+                .Query(q => q
+                    .Bool(b => {
+                        var must = new List<Query>();
+
+                        if (!string.IsNullOrWhiteSpace(query))
+                        {
+                            must.Add(new MultiMatchQuery
+                            {
+                                Fields = new[] { "title^2", "description", "category" },
+                                Query = query,
+                                Fuzziness = new Fuzziness("AUTO"),
+                                Type = TextQueryType.BestFields
+                            });
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(city))
+                        {
+                            must.Add(new TermQuery(new Field("city.keyword")) { Value = city });
+                        }
+
+                        b.Must(must.ToArray());
+                    })
+                )
             );
 
             if (!response.IsValidResponse)

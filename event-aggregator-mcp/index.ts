@@ -11,14 +11,20 @@ const server = new McpServer({
 
 server.tool(
     "search_events",
-    "Пошук подій в базі EventSpace за ключовими словами",
+    "Розумний пошук подій в базі EventSpace. LLM повинна витягнути місто та ключові слова із запиту користувача для точного пошуку.",
     {
-        query: z.string().describe("Пошуковий запит (наприклад: 'концерт Київ', 'стендап')"),
-        size: z.number().optional().default(10).describe("Кількість результатів (за замовчуванням 10)")
+        query: z.string().describe("Ключові слова для пошуку (назва події, гурт, жанр). Якщо запит містить ЛИШЕ місто (наприклад, 'події в Києві'), залиште це поле порожнім."),
+        city: z.string().optional().describe("Назва міста, витягнута з тексту (наприклад: 'Київ', 'Львів', 'Одеса'). Використовуй називний відмінок для міст, якщо це можливо."),
+        size: z.number().optional().default(10).describe("Кількість результатів")
     },
-    async ({ query, size }) => {
+    async ({ query, city, size }) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/search?query=${encodeURIComponent(query)}&size=${size}`);
+            const url = new URL(`${API_BASE_URL}/search`);
+            if (query) url.searchParams.append("query", query);
+            if (city) url.searchParams.append("city", city);
+            url.searchParams.append("size", size.toString());
+
+            const response = await fetch(url.toString());
             if (!response.ok) throw new Error("Помилка API EventAggregator");
 
             const data = await response.json();
