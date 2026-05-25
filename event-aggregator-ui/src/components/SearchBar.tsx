@@ -17,19 +17,19 @@ interface SearchBarProps {
 function RenderAiDropdownMessage({ text }: { text: string }) {
     if (!text) return null;
 
-    const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    // 🌟 ЗМІНА: Прибрали /g, тепер регулярка чиста і працює детерміновано
+    const regex = /\[([^\]]+)\]\(([^)]+)\)/;
     const lines = text.split('\n');
 
     const introText: string[] = [];
     const eventLinks: { text: string; url: string }[] = [];
     const outroText: string[] = [];
 
-    // Розділяємо текст на вступ, лінки подій та висновок
     lines.forEach(line => {
-        let cleanLine = line.replace(/^\s*[\*\-]\s+/, "").trim();
+        // Очищаємо маркери списків (*, -, цифри типу 1.)
+        let cleanLine = line.replace(/^\s*([\*\-]|(\d+\.))\s+/, "").trim();
         if (!cleanLine) return;
 
-        regex.lastIndex = 0;
         const match = regex.exec(cleanLine);
 
         if (match) {
@@ -45,16 +45,15 @@ function RenderAiDropdownMessage({ text }: { text: string }) {
         <div className="space-y-3.5">
             {/* Вступне слово асистента */}
             {introText.length > 0 && (
-                <p className="text-sm text-[#1a1535]/80 font-medium leading-relaxed">
+                <p className="text-sm text-[#1a1535]/80 font-medium leading-relaxed whitespace-pre-line">
                     {introText.join('\n')}
                 </p>
             )}
 
-            {/* 🌟 КРАСИВІ КЛІКАБЕЛЬНІ ШІ-КАРТКИ ЗАМІСТЬ СИРОГО ТЕКСТУ */}
+            {/* КЛІКАБЕЛЬНІ ШІ-КАРТКИ */}
             {eventLinks.length > 0 && (
                 <div className="grid grid-cols-1 gap-2 max-h-[240px] overflow-y-auto pr-1 custom-scrollbar">
                     {eventLinks.map((link, idx) => {
-                        // Пробуємо витягнути дату, якщо ШІ повернув її через дефіс
                         const [title, date] = link.text.split(/\s+-\s+/);
 
                         return (
@@ -82,7 +81,7 @@ function RenderAiDropdownMessage({ text }: { text: string }) {
 
             {/* Фінальне слово асистента */}
             {outroText.length > 0 && (
-                <p className="text-xs text-slate-500 font-medium pt-1 border-t border-slate-100">
+                <p className="text-xs text-slate-500 font-medium pt-2 border-t border-slate-100 whitespace-pre-line">
                     {outroText.join('\n')}
                 </p>
             )}
