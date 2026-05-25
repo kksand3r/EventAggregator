@@ -107,26 +107,30 @@ namespace EventAggregator.Api.Controllers
             [FromQuery] int pageSize = 20)
         {
             int from = (page - 1) * pageSize;
+            var now = DateTime.UtcNow;
 
-            var response = await _client.SearchAsync<ScrapedEvent>(s =>
+            var filters = new List<Action<QueryDescriptor<ScrapedEvent>>>();
+
+            filters.Add(f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now))));
+
+            if (!string.IsNullOrWhiteSpace(city) && city != "All")
             {
-                s.From(from)
-                 .Size(pageSize)
-                 .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Asc)));
+                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToUpper())));
+            }
 
-                if (!string.IsNullOrEmpty(city) || !string.IsNullOrEmpty(category))
-                {
-                    s.Query(q => q.Bool(b => b.Must(m => 
-                    {
-                        if (!string.IsNullOrEmpty(city)) m.Term(t => t.Field("city.keyword").Value(city));
-                        if (!string.IsNullOrEmpty(category)) m.Term(t => t.Field("category.keyword").Value(category));
-                    })));
-                }
-                else
-                {
-                    s.Query(q => q.MatchAll(m => { }));
-                }
-            });
+            if (!string.IsNullOrWhiteSpace(category) && category != "All")
+            {
+                filters.Add(f => f.Term(t => t.Field("category").Value(category.ToLower())));
+            }
+
+            var response = await _client.SearchAsync<ScrapedEvent>(s => s
+                .From(from)
+                .Size(pageSize)
+                .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Asc)))
+                .Query(q => q
+                    .Bool(b => b.Filter(filters.ToArray()))
+                )
+            );
 
             if (!response.IsValidResponse)
                 return StatusCode(500, response.DebugInformation);
