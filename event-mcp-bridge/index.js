@@ -14,10 +14,14 @@ const transport = new StdioClientTransport({
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
     env: {
         ...process.env,
-        ES_URL: ELASTIC_URL
+        ES_URL: ELASTIC_URL,
+        // Вимикаємо або змушуємо клієнт не шпетити сумісність з v9
+        ELASTIC_CLIENT_PASSTHROUGH_REQUEST_HEADERS: "false",
+        // Додатково можна примусово вказати версію API сумісності, якщо перша змінна не закриє проблему повністю:
+        Accept: "application/vnd.elasticsearch+json; compatible-with=8",
+        "Content-Type": "application/json"
     }
 });
-
 const mcpClient = new Client({
     name: "eventspace-mcp-bridge",
     version: "1.0.0"
@@ -128,7 +132,7 @@ app.post('/api/mcp-search', async (req, res) => {
                             name: name,
                             id: id, // ОБОВ'ЯЗКОВО
                             response: { content: toolResult.content } // Не через JSON.stringify!
-                        }
+                        }StdioClientTransport
                     }]
                 });
             } else {
