@@ -1,6 +1,7 @@
 ﻿import express from 'express';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import http from 'http';
 
 const app = express();
 app.use(express.json());
@@ -9,37 +10,67 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
-// 🌟 МАГІЧНИЙ ФІКС: Зашиваємо код патчу прямо в рядок, 
-// щоб не створювати жодних додаткових файлів і не залежати від Dockerfile!
-const patchCode = `
-import http from 'http';
-const originalRequest = http.request;
-http.request = function (url, options, callback) {
-    let opt = options || url;
-    if (opt && opt.headers) {
-        for (const key of Object.keys(opt.headers)) {
-            if (key.toLowerCase() === 'accept' || key.toLowerCase() === 'content-type') {
-                if (typeof opt.headers[key] === 'string' && opt.headers[key].includes('compatible-with=9')) {
-                    opt.headers[key] = opt.headers[key].replace('compatible-with=9', 'compatible-with=8');
-                }
-            }
-        }
-    }
-    return originalRequest.call(this, url, opt, callback);
-};
-`;
-// Перетворюємо код у віртуальний Data URI файл
-const patchUrl = 'data:text/javascript;base64,' + Buffer.from(patchCode).toString('base64');
+// =====================================================================
+// 🛡️ ВНУТРІШНІЙ HTTP-ПРОКСІ ДЛЯ КОРЕКЦІЇ ЗАГОЛОВКІВ (Fix compatible-with=9)
+// =====================================================================
+const PROXY_PORT = 9292;
+const proxy = http.createServer((req, res) => {
+    const targetUrl = new URL(ELASTIC_URL);
 
+    // Клонуємо вхідні заголовки
+    const proxyHeaders = { ...req.headers };
+
+    // Перевизначаємо host, щоб Elasticsearch коректно обробляв маршрутизацію
+    proxyHeaders.host = targetUrl.host;
+
+    // Примусово замінюємо версію сумісності 9 на 8 у заголовках Accept та Content-Type
+    ['accept', 'content-type'].forEach(header => {
+        if (proxyHeaders[header] && typeof proxyHeaders[header] === 'string' && proxyHeaders[header].includes('compatible-with=9')) {
+            proxyHeaders[header] = proxyHeaders[header].replace('compatible-with=9', 'compatible-with=8');
+        }
+    });
+
+    const options = {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || 9200,
+        path: req.url,
+        method: req.method,
+        headers: proxyHeaders
+    };
+
+    // Перенаправляємо запит до справжнього контейнера Elasticsearch
+    const proxyReq = http.request(options, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+        console.error('❌ [Proxy Error]:', err.message);
+        if (!res.headersSent) {
+            res.writeHead(502);
+            res.end('Bad Gateway');
+        }
+    });
+
+    req.pipe(proxyReq); // Пересилаємо тіло запиту (наприклад, JSON-тіло пошуку)
+});
+
+// Запускаємо проксі на локальному хості контейнера
+proxy.listen(PROXY_PORT, '127.0.0.1', () => {
+    console.log(`🛡️  Internal Elastic Proxy successfully running on 127.0.0.1:${PROXY_PORT}`);
+});
+
+
+// =====================================================================
+// 🚀 ІНІЦІАЛІЗАЦІЯ MCP КЛІЄНТА ТА ТРАНСПОРТУ
+// =====================================================================
 const transport = new StdioClientTransport({
     command: "node",
-    args: [
-        "--import", patchUrl, // Інжектуємо наш віртуальний скрипт
-        "./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"
-    ],
+    args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
     env: {
         ...process.env,
-        ES_URL: ELASTIC_URL
+        // Направляємо MCP-сервер Elastic на наш проксі
+        ES_URL: `http://127.0.0.1:${PROXY_PORT}`
     }
 });
 
@@ -62,10 +93,8 @@ try {
 
 function cleanSchema(schema) {
     if (!schema || typeof schema !== 'object') return schema;
-
     const forbidden = ['$schema', 'additionalProperties'];
     const cleaned = {};
-
     for (const [key, value] of Object.entries(schema)) {
         if (forbidden.includes(key)) continue;
         if (Array.isArray(value)) {
@@ -79,14 +108,16 @@ function cleanSchema(schema) {
     return cleaned;
 }
 
+
+// =====================================================================
+// 🧠 API ДЛЯ ОБРОБКИ ЗАПИТІВ (AI SEARCH)
+// =====================================================================
 app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
         if (!query) return res.status(400).json({ error: "Query is required" });
 
-        if (!isConnected) {
-            return res.status(503).json({ error: "MCP server unavailable" });
-        }
+        if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
 
         const mcpTools = await mcpClient.listTools();
         const functionDeclarations = mcpTools.tools.map(tool => ({
@@ -97,16 +128,25 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
+        // Контекст діалогу з суворими інструкціями для мови та лімітів
         let conversationHistory = [
             {
                 role: "user",
-                parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Обмежуй параметри 'size' до максимум 5-10 результатів.` }]
+                parts: [{ text: `
+Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". 
+
+ВАЖЛИВІ ПРАВИЛА ДЛЯ ПОШУКУ В ELASTICSEARCH:
+1. Формуй пошукові запити (query) ВИКЛЮЧНО українською мовою (наприклад, замість "concerts in Mykolaiv" шукай "концерт Миколаїв"). Назви міст та категорій у базі зберігаються українською.
+2. Використовуй інструмент пошуку лише ОДИН РАЗ за сесію.
+3. Обмежуй параметр 'size' до максимум 5 результатів.
+4. Якщо інструмент пошуку повернув порожній результат (0 подій), НЕ намагайся шукати знову за іншими параметрами чи англійською мовою. Одразу відповідай користувачу текстовим повідомленням, що на жаль подій не знайдено.
+                ` }]
             }
         ];
 
         let lastMcpData = [];
         let loopCount = 0;
-        const MAX_LOOPS = 5;
+        const MAX_LOOPS = 4; // Захист від нескінченних повторних спроб ШІ
 
         while (loopCount < MAX_LOOPS) {
             loopCount++;
@@ -141,26 +181,41 @@ app.post('/api/mcp-search', async (req, res) => {
                 conversationHistory.push(candidate.content);
             }
 
+            // Якщо модель ініціює виклик інструменту Elastic
             if (part?.functionCall) {
                 const { name, args } = part.functionCall;
-                console.log(`[Executing Tool]: ${name} with args:`, args);
+                console.log(`[Executing Tool via Proxy]: ${name} with args:`, args);
 
-                const toolResult = await mcpClient.callTool({ name, arguments: args });
-                lastMcpData = toolResult.content;
+                try {
+                    const toolResult = await mcpClient.callTool({ name, arguments: args });
+                    lastMcpData = toolResult.content;
 
-                conversationHistory.push({
-                    role: "user",
-                    parts: [{
-                        functionResponse: {
-                            name: name,
-                            response: { output: JSON.stringify(toolResult.content) }
-                        }
-                    }]
-                });
+                    conversationHistory.push({
+                        role: "user",
+                        parts: [{
+                            functionResponse: {
+                                name: name,
+                                response: { result: toolResult.content }
+                            }
+                        }]
+                    });
+                } catch (toolError) {
+                    console.error(`❌ [Tool Execution Error]: ${toolError.message}`);
+                    conversationHistory.push({
+                        role: "user",
+                        parts: [{
+                            functionResponse: {
+                                name: name,
+                                response: { error: toolError.message }
+                            }
+                        }]
+                    });
+                }
 
                 continue;
             }
 
+            // Якщо модель повернула фінальну текстову відповідь для користувача
             if (part?.text) {
                 return res.json({
                     agentMessage: part.text,
@@ -172,13 +227,12 @@ app.post('/api/mcp-search', async (req, res) => {
         }
 
         return res.json({
-            agentMessage: "Не вдалося отримати фінальний аналіз тексту від ШІ, але пошук у базі виконано.",
+            agentMessage: "Я перевірив базу даних подій. Будь ласка, ознайомтеся зі знайденими результатами нижче.",
             rawMcpData: lastMcpData
         });
 
     } catch (error) {
         console.error("[Bridge Error] Message:", error.message);
-        console.error("[Bridge Error] Stack:", error.stack);
         res.status(500).json({ error: error.message });
     }
 });
