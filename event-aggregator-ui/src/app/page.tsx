@@ -10,9 +10,11 @@ import TimelineTab from "@/components/TimelineTab";
 import CountdownSection from "@/components/CountdownSection";
 import EmptyState from "@/components/EmptyState";
 import CatalogTab from "@/components/CatalogTab";
+import ArchiveTab from "@/components/ArchiveTab";
 import { useEventFilters } from "@/hooks/useEventFilters";
 import { useMetadata } from "@/hooks/useMetadata"; 
 import { fetchEvents, searchEvents, type EventListItem } from "@/lib/api";
+
 
 function HomeContent() {
     const filters = useEventFilters();
@@ -96,6 +98,7 @@ function HomeContent() {
                 onSearchModeChange={filters.setSearchMode}
                 hideSearch={hideSearch}
                 totalEvents={totalEvents}
+                
             />
 
             <main className="container mx-auto px-6 sm:px-8 py-10 pb-20 max-w-full">
@@ -160,6 +163,7 @@ function HomeContent() {
 
                 {filters.activeTab === "timeline" && <TimelineTab />}
                 {filters.activeTab === "stats" && <StatsTab />}
+                {filters.activeTab === "archive" && <ArchiveTab />}
             </main>
 
             <Footer

@@ -33,6 +33,7 @@ export default function Header({
         { id: "catalog",   label: "Catalog",    icon: <Grid3x3 className="h-3.5 w-3.5" />, count: totalEvents },
         { id: "timeline",  label: "Timeline",   icon: <CalendarDays className="h-3.5 w-3.5" /> },
         { id: "stats",     label: "Statistics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
+        { id: "archive",   label: "Archive",    icon: <Archive className="h-3.5 w-3.5" /> }
     ];
 
     return (
