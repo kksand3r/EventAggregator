@@ -178,8 +178,25 @@ namespace EventAggregator.Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(string id)
         {
-            var response = await _client.GetAsync<ScrapedEvent>("events", id);
-            return (response.IsValidResponse && response.Source != null) ? Ok(response.Source.ToDto()) : NotFound();
+            // Шукаємо подію через Search, де поле "id" (або "id.keyword") збігається з нашим UUID
+            var response = await _client.SearchAsync<ScrapedEvent>(s => s
+                    .Index("events")
+                    .Query(q => q
+                        .Term(t => t
+                            .Field(f => f.Id) // Шукає по внутрішньому полю об'єкта ScrapedEvent
+                            .Value(id)
+                        )
+                    )
+                    .Size(1) // Нам потрібен лише один унікальний документ
+            );
+
+            if (response.IsValidResponse && response.Documents.Any())
+            {
+                var scrapedEvent = response.Documents.First();
+                return Ok(scrapedEvent.ToDto());
+            }
+
+            return NotFound();
         }
 
         [HttpGet("metadata")]
