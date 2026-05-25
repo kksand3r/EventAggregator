@@ -4,6 +4,12 @@ using Microsoft.Extensions.Configuration;
 
 namespace EventAggregator.Application.Services
 {
+    public class SearchIntent
+    {
+        public string[] Keywords { get; set; } = Array.Empty<string>();
+        public string? City { get; set; }
+    }
+
     public class GeminiService
     {
         private readonly string _apiKey;
@@ -17,60 +23,60 @@ namespace EventAggregator.Application.Services
             _httpClient = httpClient;
         }
         
+        public async Task<SearchIntent> GetSearchIntentAsync(string userPrompt)
+        {
+            if (string.IsNullOrWhiteSpace(userPrompt)) return new SearchIntent();
+
+            var systemPrompt = @"Ти — аналітик пошукових запитів. 
+            Твоє завдання: розібрати запит користувача і повернути JSON з двома полями:
+            1. 'keywords' (масив рядків): ключові слова для пошуку подій (жанр, назва, категорія).
+            2. 'city' (рядок або null): назва міста, якщо воно вказано в запиті.
+            
+            Відповідай ТІЛЬКИ валідним JSON форматом. Жодних пояснень чи тексту поза JSON.";
+
+            var requestBody = new
+            {
+                contents = new[]
+                {
+                    new { parts = new[] { new { text = $"{systemPrompt}\n\nЗапит: {userPrompt}" } } }
+                },
+                generationConfig = new { temperature = 0.2, maxOutputTokens = 150 }
+            };
+
+            var rawResult = await SendGeminiRequest(requestBody, "SearchIntent");
+
+            try
+            {
+                var cleanedJson = rawResult.Replace("```json", "").Replace("```", "").Trim();
+                return JsonSerializer.Deserialize<SearchIntent>(cleanedJson, new JsonSerializerOptions 
+                { 
+                    PropertyNameCaseInsensitive = true 
+                }) ?? new SearchIntent();
+            }
+            catch
+            {
+                return new SearchIntent();
+            }
+        }
+
         public async Task<string> SummarizeEventAsync(string title, string description)
         {
             if (string.IsNullOrWhiteSpace(description) || description == "Опис на сайті" || description == "Опис відсутній")
                 return "AI не може проаналізувати подію через відсутність детального опису.";
 
             var systemPrompt = "Ти — аналітичний асистент платформи EventSpace. Твоє завдання — зробити стисле (до 200 символів) " +
-                               "резюме події на основі опису. ПИШИ СУВОРО: без емодзі, без знаків оклику, без рекламних закликів " +
-                               "та без звертань до користувача. Тільки головна суть у 1-2 реченнях.";
+                               "резюме події. ПИШИ СУВОРО: без емодзі, без знаків оклику, без реклами. 1-2 речення.";
 
             var requestBody = new
             {
                 contents = new[]
                 {
-                    new
-                    {
-                        parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } }
-                    }
+                    new { parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } } }
                 },
                 generationConfig = new { temperature = 0.4, maxOutputTokens = 150 }
             };
 
             return await SendGeminiRequest(requestBody, "Summarize");
-        }
-        
-        public async Task<string[]> GetSearchKeywordsAsync(string userPrompt)
-        {
-            if (string.IsNullOrWhiteSpace(userPrompt)) return Array.Empty<string>();
-            
-            var systemPrompt = "Ти — пошуковий аналітик. Користувач вводить запит на пошук події. " +
-                               "Твоє завдання — виділити з запиту 2-4 ключових слова або назви категорій (наприклад: концерт, театр, стендап, романтика, джаз, сімейне), " +
-                               "які найкраще передають намір користувача. " +
-                               "ВІДПОВІДАЙ ТІЛЬКИ СЛОВАМИ ЧЕРЕЗ КОМУ. БЕЗ ПОЯСНЕНЬ.";
-
-            var requestBody = new
-            {
-                contents = new[]
-                {
-                    new
-                    {
-                        parts = new[] { new { text = $"{systemPrompt}\n\nЗапит: {userPrompt}" } }
-                    }
-                },
-                generationConfig = new { temperature = 0.2, maxOutputTokens = 60 }
-            };
-
-            var rawResult = await SendGeminiRequest(requestBody, "Keywords");
-
-            if (string.IsNullOrEmpty(rawResult) || rawResult.Contains("Error") || rawResult.Contains("Тимчасово"))
-                return Array.Empty<string>();
-
-            return rawResult.Split(',')
-                .Select(s => s.Trim().ToLower())
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToArray();
         }
 
         private async Task<string> SendGeminiRequest(object requestBody, string context)
@@ -84,26 +90,19 @@ namespace EventAggregator.Application.Services
                 var response = await _httpClient.PostAsync(url, content);
 
                 if (!response.IsSuccessStatusCode)
-                {
-                    var error = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[Gemini Error - {context}] Status: {response.StatusCode}, Details: {error}");
                     return "Тимчасово не вдалося завантажити AI-аналіз.";
-                }
 
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
 
-                var result = doc.RootElement
+                return doc.RootElement
                     .GetProperty("candidates")[0]
                     .GetProperty("content")
                     .GetProperty("parts")[0]
-                    .GetProperty("text").GetString();
-
-                return result?.Trim().Trim('"').Trim('«').Trim('»') ?? "";
+                    .GetProperty("text").GetString() ?? "";
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"[Gemini Exception - {context}] Message: {ex.Message}");
                 return "Помилка системи AI.";
             }
         }

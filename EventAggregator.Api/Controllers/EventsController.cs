@@ -23,64 +23,55 @@ namespace EventAggregator.Api.Controllers
         {
             if (string.IsNullOrWhiteSpace(query))
                 return Ok(Enumerable.Empty<EventDto>());
-            
-            var keywords = await gemini.GetSearchKeywordsAsync(query);
+    
+            // 1. Отримуємо розширений намір (keywords + city)
+            var intent = await gemini.GetSearchIntentAsync(query); 
 
-            if (keywords == null || keywords.Length == 0)
-                return await Search(query, null, size: size);
-
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                .Size(size)
-                .Query(q => q
-                    .Bool(b => b
-                        .Should(sh => sh
-                            .MultiMatch(mm => mm
-                                .Fields(new[] { "category^3", "title^2", "description" })
-                                .Query(string.Join(" ", keywords))
-                                .Fuzziness(new Fuzziness("AUTO"))
-                            )
-                        )
-                    )
-                )
-            );
-
-            if (!response.IsValidResponse)
-                return StatusCode(500, response.DebugInformation);
-
-            return Ok(response.Documents.Select(d => d.ToDto()));
-        }
-
-        [HttpGet("search")]
-        public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] string? city, [FromQuery] int size = 20)
-        {
-            if (string.IsNullOrWhiteSpace(query) && string.IsNullOrWhiteSpace(city))
-                return Ok(Enumerable.Empty<EventDto>());
-
+            // 2. Формуємо запит до Elastic
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .Size(size)
                 .Query(q => q
                     .Bool(b => {
                         var must = new List<Query>();
 
-                        if (!string.IsNullOrWhiteSpace(query))
+                        // Пошук за ключовими словами
+                        if (intent.Keywords != null && intent.Keywords.Length > 0)
                         {
-                            must.Add(new MultiMatchQuery
-                            {
-                                Fields = new[] { "title^2", "description", "category" },
-                                Query = query,
-                                Fuzziness = new Fuzziness("AUTO"),
-                                Type = TextQueryType.BestFields
+                            must.Add(new MultiMatchQuery {
+                                Fields = new[] { "category^3", "title^2", "description" },
+                                Query = string.Join(" ", intent.Keywords),
+                                Fuzziness = new Fuzziness("AUTO")
                             });
                         }
 
-                        if (!string.IsNullOrWhiteSpace(city))
+                        // AI-фільтрація за містом
+                        if (!string.IsNullOrWhiteSpace(intent.City))
                         {
-                            must.Add(new TermQuery(new Field("city.keyword")) { Value = city });
+                            must.Add(new TermQuery(new Field("city.keyword")) { Value = intent.City });
                         }
 
                         b.Must(must.ToArray());
                     })
                 )
+            );
+
+            return Ok(response.Documents.Select(d => d.ToDto()));
+        }
+
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return Ok(Enumerable.Empty<EventDto>());
+
+            var response = await _client.SearchAsync<ScrapedEvent>(s => s
+                .Size(size)
+                .Query(q => q.MultiMatch(mm => mm
+                    .Fields(new[] { "title^2", "description", "category" })
+                    .Query(query)
+                    .Fuzziness(new Fuzziness("AUTO"))
+                    .Type(TextQueryType.BestFields)
+                ))
             );
 
             if (!response.IsValidResponse)
