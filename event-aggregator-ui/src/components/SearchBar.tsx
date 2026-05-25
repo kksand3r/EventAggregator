@@ -1,11 +1,16 @@
 "use client";
 
-import {useEffect, useState, useRef} from "react";
-import {Search, Sparkles, Loader2, Calendar, MapPin, List, X, Bot} from "lucide-react"; // Додав іконку Bot
-import {useRouter} from "next/navigation";
-import {fetchAiSearchSuggestions, AiSearchResponse} from "@/lib/api"; // Оновив імпорт
+import { useEffect, useState, useRef } from "react";
+import { Search, Sparkles, Loader2, Calendar, MapPin, List, X, Bot } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { fetchAiSearchSuggestions, AiSearchResponse } from "@/lib/api";
 
-// ... інтерфейс SearchBarProps без змін ...
+interface SearchBarProps {
+    value: string;
+    onChange: (value: string) => void;
+    onModeChange?: (mode: 'ai' | 'classic') => void;
+    placeholder?: string;
+}
 
 export default function SearchBar({
                                       value: externalValue,
@@ -16,7 +21,7 @@ export default function SearchBar({
     const [localValue, setLocalValue] = useState(externalValue);
     const [searchMode, setSearchMode] = useState<'ai' | 'classic'>('ai');
 
-    // Змінюємо стейт для збереження повної відповіді
+    // Стейт для збереження повної структурованої відповіді від MCP-агента
     const [aiResponse, setAiResponse] = useState<AiSearchResponse>({ agentMessage: "", events: [] });
     const [isLoading, setIsLoading] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
@@ -24,8 +29,27 @@ export default function SearchBar({
     const router = useRouter();
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // ... handleToggleMode, handleInputChange, clearInput без змін, 
-    // ТІЛЬКИ в clearInput додай: setAiResponse({ agentMessage: "", events: [] });
+    useEffect(() => {
+        setLocalValue(externalValue);
+    }, [externalValue]);
+
+    const handleToggleMode = (mode: 'ai' | 'classic') => {
+        setSearchMode(mode);
+        onModeChange?.(mode);
+        if (mode === 'classic') {
+            externalOnChange(localValue);
+        } else {
+            setAiResponse({ agentMessage: "", events: [] });
+            setShowDropdown(false);
+        }
+    };
+
+    const handleInputChange = (val: string) => {
+        setLocalValue(val);
+        if (searchMode === 'classic') {
+            externalOnChange(val);
+        }
+    };
 
     const clearInput = () => {
         handleInputChange("");
@@ -43,10 +67,11 @@ export default function SearchBar({
         const runSearch = async () => {
             setIsLoading(true);
             try {
-                const response = await fetchAiSearchSuggestions(localValue);
-                setAiResponse(response);
-                // Показуємо дропдаун, якщо є повідомлення АБО є події
-                setShowDropdown(Boolean(response.agentMessage) || response.events.length > 0);
+                const result = await fetchAiSearchSuggestions(localValue);
+                setAiResponse(result);
+
+                // Відображаємо меню, якщо ШІ повернув текст відповіді АБО знайшов картки подій
+                setShowDropdown(Boolean(result.agentMessage) || result.events.length > 0);
             } catch (error) {
                 console.error("AI Search Error:", error);
             } finally {
@@ -58,12 +83,18 @@ export default function SearchBar({
         return () => clearTimeout(timer);
     }, [localValue, searchMode]);
 
-    // ... useEffect(handleClickOutside) без змін ...
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setShowDropdown(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     return (
         <div className="relative w-full" ref={dropdownRef}>
-            {/* ... input та кнопки без змін ... */}
-
             <div className="relative w-full flex items-center">
                 <div className="absolute left-3.5 z-10 flex pointer-events-none">
                     {searchMode === 'ai' ? (
@@ -80,13 +111,16 @@ export default function SearchBar({
                     onFocus={() => {
                         if (aiResponse.agentMessage || aiResponse.events.length > 0) setShowDropdown(true);
                     }}
-                    placeholder={searchMode === 'ai' ? "Запитайте ШІ..." : "Пошук подій..."}
+                    placeholder={searchMode === 'ai' ? "Запитайте ШІ..." : placeholder}
                     className="w-full h-12 pl-[42px] pr-[110px] rounded-full border border-white/90 bg-white/70 backdrop-blur-[20px] text-sm font-medium text-[#1a1535] outline-none transition-all duration-200 shadow-[0_4px_12px_rgba(0,0,0,0.03)] appearance-none placeholder:text-gray-500 [&::-webkit-search-decoration]:hidden [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-results-button]:hidden [&::-webkit-search-results-decoration]:hidden"
                 />
 
                 <div className="absolute right-1.5 flex items-center gap-1 bg-black/5 p-1 rounded-full z-20">
                     {localValue && !isLoading && (
-                        <button onClick={clearInput} className="bg-transparent border-none cursor-pointer p-1 flex items-center text-slate-400 hover:text-slate-600 transition-colors">
+                        <button
+                            onClick={clearInput}
+                            className="bg-transparent border-none cursor-pointer p-1 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                        >
                             <X className="w-3.5 h-3.5"/>
                         </button>
                     )}
@@ -97,44 +131,64 @@ export default function SearchBar({
                         </div>
                     )}
 
-                    <button type="button" onClick={() => handleToggleMode('ai')} title="AI Пошук" className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${searchMode === 'ai' ? "bg-[#7c4dff] text-white" : "bg-transparent text-[#5a4fa0] hover:bg-black/5"}`}>
+                    <button
+                        type="button"
+                        onClick={() => handleToggleMode('ai')}
+                        title="AI Пошук"
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                            searchMode === 'ai'
+                                ? "bg-[#7c4dff] text-white"
+                                : "bg-transparent text-[#5a4fa0] hover:bg-black/5"
+                        }`}
+                    >
                         <Sparkles className="w-4 h-4"/>
                     </button>
 
-                    <button type="button" onClick={() => handleToggleMode('classic')} title="Класичний пошук" className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${searchMode === 'classic' ? "bg-[#1a1535] text-white" : "bg-transparent text-[#5a4fa0] hover:bg-black/5"}`}>
+                    <button
+                        type="button"
+                        onClick={() => handleToggleMode('classic')}
+                        title="Класичний пошук"
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                            searchMode === 'classic'
+                                ? "bg-[#1a1535] text-white"
+                                : "bg-transparent text-[#5a4fa0] hover:bg-black/5"
+                        }`}
+                    >
                         <List className="w-4 h-4"/>
                     </button>
                 </div>
             </div>
 
-            {/* ОНОВЛЕНИЙ ДРОПДАУН ДЛЯ ШІ */}
+            {/* Випадаюче вікно ШІ Рекомендацій */}
             {searchMode === 'ai' && showDropdown && (aiResponse.agentMessage || aiResponse.events.length > 0) && (
-                <div className="absolute top-14 left-0 right-0 bg-white/98 backdrop-blur-[25px] rounded-3xl p-4 border border-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] z-[100] flex flex-col gap-4">
+                <div
+                    className="absolute top-14 left-0 right-0 bg-white/98 backdrop-blur-[25px] rounded-3xl p-4 border border-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] z-[100] flex flex-col gap-4">
 
-                    {/* Секція відповіді Агента */}
+                    {/* Текстова відповідь від ШІ Агента */}
                     {aiResponse.agentMessage && (
-                        <div className="bg-gradient-to-br from-[#7c4dff]/10 to-[#5a4fa0]/5 rounded-2xl p-4 border border-[#7c4dff]/20">
-                            <div className="flex items-center gap-2 mb-2">
+                        <div className="bg-gradient-to-br from-[#7c4dff]/8 to-[#5a4fa0]/4 rounded-2xl p-4 border border-[#7c4dff]/15">
+                            <div className="flex items-center gap-2 mb-1.5">
                                 <Bot className="w-4 h-4 text-[#7c4dff]"/>
-                                <span className="text-xs font-bold text-[#7c4dff] uppercase tracking-wider">
+                                <span className="text-[11px] font-bold text-[#7c4dff] uppercase tracking-wider">
                                     AI Асистент
                                 </span>
                             </div>
-                            <p className="text-sm text-[#1a1535]/80 leading-relaxed">
+                            <p className="text-sm text-[#1a1535]/90 leading-relaxed font-medium">
                                 {aiResponse.agentMessage}
                             </p>
                         </div>
                     )}
 
-                    {/* Секція карток подій (якщо є) */}
+                    {/* Картки релевантних подій, знайдені за допомогою MCP-сервера */}
                     {aiResponse.events.length > 0 && (
                         <div>
                             <div className="flex items-center gap-2 px-1 mb-2">
                                 <Sparkles className="w-3.5 h-3.5 text-slate-400"/>
                                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.1em]">
-                                    Знайдені події
+                                    Підібрані події
                                 </span>
                             </div>
+
                             <div className="flex flex-col gap-1">
                                 {aiResponse.events.map((event) => (
                                     <div
@@ -143,12 +197,18 @@ export default function SearchBar({
                                             router.push(`/events/${event.id}`);
                                             setShowDropdown(false);
                                         }}
-                                        className="p-3 sm:px-4 sm:py-3 rounded-2xl cursor-pointer transition-colors hover:bg-slate-50"
+                                        className="p-3 sm:px-4 sm:py-3 rounded-2xl cursor-pointer transition-colors hover:bg-[#7c4dff]/8"
                                     >
-                                        <div className="font-bold text-sm text-[#1a1535]">{event.title}</div>
-                                        <div className="flex flex-wrap gap-3 text-slate-500 text-[11px] mt-1">
-                                            <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {event.city}</span>
-                                            <span className="flex items-center gap-1"><Calendar className="w-3 h-3"/> {event.date}</span>
+                                        <div className="font-bold text-sm text-[#1a1535] hover:text-[#7c4dff] transition-colors">
+                                            {event.title}
+                                        </div>
+                                        <div className="flex flex-wrap gap-3 text-slate-500 text-[11px] mt-1 font-medium">
+                                            <span className="flex items-center gap-1">
+                                                <MapPin className="w-3 h-3 text-slate-400"/> {event.city}
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Calendar className="w-3 h-3 text-slate-400"/> {event.date}
+                                            </span>
                                         </div>
                                     </div>
                                 ))}
