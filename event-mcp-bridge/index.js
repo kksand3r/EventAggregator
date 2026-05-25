@@ -16,14 +16,9 @@ const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200"
 const PROXY_PORT = 9292;
 const proxy = http.createServer((req, res) => {
     const targetUrl = new URL(ELASTIC_URL);
-
-    // Клонуємо вхідні заголовки
     const proxyHeaders = { ...req.headers };
-
-    // Перевизначаємо host, щоб Elasticsearch коректно обробляв маршрутизацію
     proxyHeaders.host = targetUrl.host;
 
-    // Примусово замінюємо версію сумісності 9 на 8 у заголовках Accept та Content-Type
     ['accept', 'content-type'].forEach(header => {
         if (proxyHeaders[header] && typeof proxyHeaders[header] === 'string' && proxyHeaders[header].includes('compatible-with=9')) {
             proxyHeaders[header] = proxyHeaders[header].replace('compatible-with=9', 'compatible-with=8');
@@ -38,7 +33,6 @@ const proxy = http.createServer((req, res) => {
         headers: proxyHeaders
     };
 
-    // Перенаправляємо запит до справжнього контейнера Elasticsearch
     const proxyReq = http.request(options, (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res);
@@ -52,10 +46,9 @@ const proxy = http.createServer((req, res) => {
         }
     });
 
-    req.pipe(proxyReq); // Пересилаємо тіло запиту
+    req.pipe(proxyReq);
 });
 
-// Запускаємо проксі на локальному хості контейнера
 proxy.listen(PROXY_PORT, '127.0.0.1', () => {
     console.log(`🛡️  Internal Elastic Proxy successfully running on 127.0.0.1:${PROXY_PORT}`);
 });
@@ -107,6 +100,60 @@ function cleanSchema(schema) {
     return cleaned;
 }
 
+// =====================================================================
+// 🗺️ МАПИ ДЛЯ НОРМАЛІЗАЦІЇ МІСТ ТА КАТЕГОРІЙ
+// =====================================================================
+
+// Українська назва → латинський slug у верхньому регістрі (як зберігається в БД)
+const CITY_MAP = {
+    "київ": "KYIV", "киев": "KYIV", "kyiv": "KYIV", "kiev": "KYIV",
+    "львів": "LVIV", "львов": "LVIV", "lviv": "LVIV",
+    "одеса": "ODESA", "одесса": "ODESA", "odesa": "ODESA", "odessa": "ODESA",
+    "харків": "KHARKIV", "харьков": "KHARKIV", "kharkiv": "KHARKIV",
+    "дніпро": "DNIPRO", "днепр": "DNIPRO", "dnipro": "DNIPRO",
+    "івано-франківськ": "IVANO-FRANKIVSK", "ивано-франковск": "IVANO-FRANKIVSK", "ivano-frankivsk": "IVANO-FRANKIVSK",
+    "вінниця": "VINNYTSIA", "винница": "VINNYTSIA", "vinnytsia": "VINNYTSIA",
+    "полтава": "POLTAVA", "poltava": "POLTAVA",
+    "житомир": "ZHYTOMYR", "zhytomyr": "ZHYTOMYR",
+    "запоріжжя": "ZAPORIZHZHIA", "запорожье": "ZAPORIZHZHIA", "zaporizhzhia": "ZAPORIZHZHIA",
+    "тернопіль": "TERNOPIL", "тернополь": "TERNOPIL", "ternopil": "TERNOPIL",
+    "чернівці": "CHERNIVTSI", "черновцы": "CHERNIVTSI", "chernivtsi": "CHERNIVTSI",
+    "чернігів": "CHERNIHIV", "чернигов": "CHERNIHIV", "chernihiv": "CHERNIHIV",
+    "суми": "SUMY", "sumy": "SUMY",
+    "хмельницький": "KHMELNYTSKYI", "хмельницкий": "KHMELNYTSKYI", "khmelnytskyi": "KHMELNYTSKYI",
+    "рівне": "RIVNE", "ровно": "RIVNE", "rivne": "RIVNE",
+    "луцьк": "LUTSK", "луцк": "LUTSK", "lutsk": "LUTSK",
+    "миколаїв": "MYKOLAIV", "николаев": "MYKOLAIV", "mykolaiv": "MYKOLAIV",
+    "ужгород": "UZHHOROD", "uzhhorod": "UZHHOROD",
+    "кропивницький": "KROPYVNYTSKYI", "кропивницкий": "KROPYVNYTSKYI", "kropyvnytskyi": "KROPYVNYTSKYI",
+};
+
+// Синоніми категорій → slug у БД
+const CATEGORY_MAP = {
+    "концерт": "concerts", "концерти": "concerts", "concert": "concerts",
+    "театр": "theatres", "театри": "theatres", "вистава": "theatres", "theatre": "theatres",
+    "стендап": "stand-up", "stand-up": "stand-up", "stand up": "stand-up", "гумор": "stand-up",
+    "дитячий": "child", "дітям": "child", "дитяче": "child", "child": "child",
+    "клуб": "clubs", "клуби": "clubs", "clubs": "clubs",
+    "фестиваль": "festivals", "фестивалі": "festivals", "festival": "festivals",
+    "інше": "inshe", "інший": "inshe", "inshe": "inshe",
+};
+
+function extractCityAndCategory(query) {
+    const lower = query.toLowerCase();
+    let city = null;
+    let category = null;
+
+    for (const [key, val] of Object.entries(CITY_MAP)) {
+        if (lower.includes(key)) { city = val; break; }
+    }
+    for (const [key, val] of Object.entries(CATEGORY_MAP)) {
+        if (lower.includes(key)) { category = val; break; }
+    }
+
+    return { city, category };
+}
+
 
 // =====================================================================
 // 🧠 API ДЛЯ ОБРОБКИ ЗАПИТІВ (AI SEARCH)
@@ -115,8 +162,18 @@ app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
         if (!query) return res.status(400).json({ error: "Query is required" });
-
         if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
+
+        // ✅ Нормалізуємо місто та категорію до значень які реально є в БД
+        const { city, category } = extractCityAndCategory(query);
+
+        const cityInstruction = city
+            ? `Місто у запиті — завжди використовуй точне значення: "${city}" (латиниця, верхній регістр). Це єдиний правильний формат для поля city в базі.`
+            : `Місто у запиті не вказано — не фільтруй за містом.`;
+
+        const categoryInstruction = category
+            ? `Категорія у запиті — завжди використовуй точне значення: "${category}". Це єдиний правильний формат для поля category в базі.`
+            : `Категорія не вказана явно — використовуй ключові слова з запиту для пошуку по полю title або description.`;
 
         const mcpTools = await mcpClient.listTools();
         const functionDeclarations = mcpTools.tools.map(tool => ({
@@ -131,23 +188,28 @@ app.post('/api/mcp-search', async (req, res) => {
             {
                 role: "user",
                 parts: [{ text: `
-Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". 
+Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}".
 
-СУВОРІ ПРАВИЛА ДЛЯ ФОРМУВАННЯ ЗАПИТУ В ELASTICSEARCH:
-1. Завжди переводи назву міста у ВЕЛИКІ ЛІТЕРИ (наприклад, замість "Миколаїв" пиши "МИКОЛАЇВ", замість "Київ" пиши "КИЇВ"). Це критично для пошуку!
-2. Для пошуку використовуй просту текстову фразу українською мовою через параметр "query" (наприклад: "театри МИКОЛАЇВ"). Не будуй занадто складні вкладені bool-структури, якщо інструмент дозволяє простий пошук.
-3. Категорії в базі можуть бути записані як у множині, так і в однині (наприклад, "концерти" або "концерт", "театри" або "театр", "вистава"), враховуй це та синоніми при формуванні пошукового слова.
-4. Зроби виклик інструменту пошуку лише ОДИН РАЗ за сесію. Обмежуй параметр 'size' до 20, щоб бачити повну картину подій.
-5. Якщо інструмент пошуку повернув порожній результат, одразу відповідай користувачу, що подій не знайдено.
-6. Ти ПОВИНЕН проаналізувати всі знайдені інструментом події. Якщо декілька подій відповідають запиту користувача (наприклад, у вибірці є 5 різних театрів), ти зобов'язаний вивести у фінальній відповіді ВСІ ці події списком. Ніколи не обмежуйся лише однією подією!
-7. КРИТИЧНО ВАЖЛИВО ДЛЯ ЧАСУ: Якщо користувач використовує фрази "найближчим часом", "скоро", "на вихідних" або шукає актуальні події, ти ПОВИНЕН обов'язково додавати параметри сортування за датою у свій запит до Elasticsearch. Формуй сортування за полем "parsedDate" у порядку зростання ("asc"), щоб найближчі події завжди йшли першими в масиві результатів.
+КРИТИЧНО ВАЖЛИВО — ФОРМАТ ДАНИХ У БАЗІ:
+- Поле "city" зберігається ВИКЛЮЧНО латиницею у верхньому регістрі. Наприклад: "KYIV", "LVIV", "ODESA". Кирилиця у city НЕ існує.
+- Поле "category" зберігається ВИКЛЮЧНО одним із значень: "concerts", "theatres", "stand-up", "child", "clubs", "festivals", "inshe". Інших значень немає.
+- ${cityInstruction}
+- ${categoryInstruction}
+
+ПРАВИЛА ФОРМУВАННЯ ЗАПИТУ ДО ELASTICSEARCH:
+1. Використовуй term-фільтри для точних полів (city, category) — вони чутливі до регістру і повинні збігатись ТОЧНО.
+2. Для пошуку по назві/опису використовуй match або multi_match по полях "title" та "description".
+3. Зроби виклик інструменту пошуку лише ОДИН РАЗ. Обмежуй параметр "size" до 20.
+4. Якщо результат порожній — одразу повідомляй що нічого не знайдено.
+5. Якщо знайдено декілька подій — виводь ВСІ у відповіді.
+6. Якщо користувач шукає найближчі події — сортуй за полем "parsedDate" у порядку "asc".
 
 ПРАВИЛО ФОРМУВАННЯ ФІНАЛЬНОЇ ВІДПОВІДІ (agentMessage):
-Якщо інструмент пошуку знайшов події, обов'язково оформлюй кожну знайдену подію у своєму фінальному тексті як клікабельне Markdown-посилання, яке веде на ВНУТРІШНЮ сторінку нашого сайту!
-Для формування посилання бери унікальний ідентифікатор події СТРОГО з поля "_id" або "id" знайденого документа (копіюй стрічку з ID один в один, без змін).
-Формат посилання: [Назва події - Дата проведення](/events/ІДЕНТИФІКАТОР)
-Приклад: "Я знайшов такі події: рекомендую відвідати [Рок-концерт СКАЙ - 29 Травня](/events/019e1648-f075-77cc) або [Симфонічний оркестр - 2 Червня](/events/019db020-83a2)."
-        ` }]
+Кожну знайдену подію оформлюй як Markdown-посилання на внутрішню сторінку сайту.
+Бери ID СТРОГО з поля "_id" або "id" документа без змін.
+Формат: [Назва події - Дата]( /events/ID )
+Приклад: [Рок-концерт СКАЙ - 29 Травня](/events/019e1648-f075-77cc)
+                ` }]
             }
         ];
 
@@ -180,7 +242,6 @@ app.post('/api/mcp-search', async (req, res) => {
                 });
             }
 
-            // ✅ ТУТ СИНТАКСИС ВИПРАВЛЕНО
             console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.stringify(jsonResponse, null, 2));
             let candidate = jsonResponse.candidates?.[0];
             let part = candidate?.content?.parts?.[0];
@@ -197,7 +258,6 @@ app.post('/api/mcp-search', async (req, res) => {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
                     lastMcpData = toolResult.content;
 
-                    // ✅ Передаємо ключ "output", як і просив ваш C# бекенд
                     conversationHistory.push({
                         role: "user",
                         parts: [{
