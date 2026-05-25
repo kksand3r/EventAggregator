@@ -211,3 +211,9 @@ export async function fetchAiSearchSuggestions(query: string, size = 5): Promise
         return [];
     }
 }
+
+export const fetchArchiveEvents = async (page = 1, pageSize = 20) => {
+    const res = await fetch(`${API_BASE_URL}/api/events/archive?page=${page}&pageSize=${pageSize}`);
+    if (!res.ok) throw new Error("Помилка завантаження архіву");
+    return res.json();
+};
