@@ -5,8 +5,8 @@
   "main": "index.js",
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.1",
-    "@elastic/mcp-server-elasticsearch": "^1.0.0",
-    "express": "^4.19.2"
+    "@modelcontextprotocol/sdk": "latest",
+    "@elastic/mcp-server-elasticsearch": "latest",
+    "express": "latest"
   }
 }

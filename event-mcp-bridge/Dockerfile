@@ -5,11 +5,11 @@ WORKDIR /app
 # Оновлюємо сертифікати та додаємо базові утиліти
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Копіюємо файли конфігурації залежностей
+# Копіюємо package.json
 COPY package*.json ./
 
-# Встановлюємо залежності суворо без devDependencies (правильний прапор для Node 20)
-RUN npm ci --omit=dev
+# Використовуємо звичайний install, оскільки package-lock.json ще не існує
+RUN npm install
 
 # Копіюємо решту початкового коду мікросервісу
 COPY . .
