@@ -11,6 +11,8 @@ interface EventCardProps {
 }
 
 function formatViewCount(count: number): string {
+    // 🌟 ВИПРАВЛЕННЯ: Захист від undefined, якщо поле прийде порожнім (щоб не було помилки toFixed)
+    if (!count) return "0";
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
     if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
     return count.toString();
@@ -22,12 +24,21 @@ function getCategoryLabel(event: EventListItem): string {
 }
 
 export default function EventCard({event, index = 0}: EventCardProps) {
+    // 🌟 ЗАХИСТ: Якщо об'єкт події з якоїсь причини прийшов порожнім від Elastic
+    if (!event) return null;
+
     const delay = Math.min(index * 60, 600);
     const category = getCategoryLabel(event);
 
+    // 🌟 ВИПРАВЛЕННЯ: Безпечний мапінг ідентифікатора події (якщо Elastic віддасть _id або id)
+    const eventId = event.id || (event as any)._id || "";
+
+    // 🌟 ВИПРАВЛЕННЯ: Сумісність полів переглядів (базовий пошук віддає viewsCount, а DTO - viewCount)
+    const views = event.viewCount !== undefined ? event.viewCount : ((event as any).viewsCount ?? 0);
+
     return (
         <Link
-            href={`/events/${event.id}`}
+            href={`/events/${eventId}`}
             className="block h-full no-underline group"
         >
             <style>{`@keyframes cardAppear { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }`}</style>
@@ -39,6 +50,7 @@ export default function EventCard({event, index = 0}: EventCardProps) {
                     animationDelay: `${delay}ms`,
                 }}
             >
+                {/* 🔒 Твої робочі картинки — СУВОРО БЕЗ ЗМІН */}
                 <div className="absolute inset-0 z-0">
                     <Image
                         src={event.image}
@@ -49,6 +61,7 @@ export default function EventCard({event, index = 0}: EventCardProps) {
                     />
                 </div>
 
+                {/* 🔒 Твої робочі картинки — СУВОРО БЕЗ ЗМІН */}
                 <div className="absolute inset-0 z-10 p-2.5">
                     <Image
                         src={event.image}
@@ -69,22 +82,22 @@ export default function EventCard({event, index = 0}: EventCardProps) {
                 <div
                     className="absolute top-3 right-3 z-30 flex items-center gap-1 bg-black/45 backdrop-blur-md border border-white/20 rounded-lg px-2 py-1 text-xs font-semibold text-white">
                     <Eye className="w-[13px] h-[13px]"/>
-                    {formatViewCount(event.viewCount)}
+                    {formatViewCount(views)}
                 </div>
 
                 <div className="relative z-30 p-5 flex flex-col gap-2">
                     <h3 className="text-[17px] font-bold leading-tight text-white line-clamp-2 m-0 tracking-tight">
-                        {event.title}
+                        {event.title || "Без назви"}
                     </h3>
 
                     <div className="flex flex-wrap items-center gap-y-1.5 gap-x-3.5 text-[12.5px]">
                         <span className="flex items-center gap-1 text-[#FFD166] font-semibold">
                             <Calendar className="w-[13px] h-[13px]"/>
-                            {event.date}
+                            {event.date || "Дата уточнюється"}
                         </span>
                         <span className="flex items-center gap-1 text-white/75 font-medium">
                             <MapPin className="w-[13px] h-[13px]"/>
-                            {event.city}
+                            {event.city || "Місто уточнюється"}
                         </span>
                     </div>
                 </div>
