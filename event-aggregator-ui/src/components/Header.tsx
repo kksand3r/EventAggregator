@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { House, Grid3x3, CalendarDays, BarChart2, Ticket } from "lucide-react";
+import { House, Grid3x3, CalendarDays, BarChart2, Ticket, Archive} from "lucide-react";
 import SearchBar from "@/components/SearchBar";
 
 export type Tab = "featured" | "catalog" | "timeline" | "stats" | "archive";
