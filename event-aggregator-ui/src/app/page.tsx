@@ -21,36 +21,58 @@ import { fetchEvents, type EventListItem } from "@/lib/api";
 function RenderAiMessage({ text }: { text: string }) {
     if (!text) return null;
 
-    // Регулярний вираз для пошуку шаблону Markdown-посилань [Текст](Шлях)
+    // Регулярний вираз, який залізобетонно знаходить Markdown-посилання будь-якого формату
     const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
-    const parts = [];
-    let lastIndex = 0;
-    let match;
 
-    while ((match = regex.exec(text)) !== null) {
-        if (match.index > lastIndex) {
-            parts.push(text.substring(lastIndex, match.index));
-        }
-        const linkText = match[1];
-        const linkUrl = match[2];
+    // Розбиваємо весь текст на рядки, щоб зберегти списки та переносові символи \n
+    const lines = text.split('\n');
 
-        parts.push(
-            <Link
-                key={match.index}
-                href={linkUrl}
-                className="text-[#7c4dff] font-bold underline hover:text-[#5e35b1] transition-colors mx-1"
-            >
-                {linkText}
-            </Link>
-        );
-        lastIndex = regex.lastIndex;
-    }
+    return (
+        <div className="space-y-2">
+            {lines.map((line, lineIdx) => {
+                const parts = [];
+                let lastIndex = 0;
+                let match;
 
-    if (lastIndex < text.length) {
-        parts.push(text.substring(lastIndex));
-    }
+                // Скидаємо індекс регулярки для кожного нового рядка
+                regex.lastIndex = 0;
 
-    return <p className="text-base text-[#1a1535] leading-relaxed whitespace-pre-line">{parts.length > 0 ? parts : text}</p>;
+                while ((match = regex.exec(line)) !== null) {
+                    // Додаємо текст, який йшов ДО посилання
+                    if (match.index > lastIndex) {
+                        parts.push(line.substring(lastIndex, match.index));
+                    }
+
+                    const linkText = match[1];
+                    const linkUrl = match[2];
+
+                    // Додаємо клікабельний лінк Next.js Link
+                    parts.push(
+                        <Link
+                            key={match.index}
+                            href={linkUrl}
+                            className="text-[#7c4dff] font-extrabold underline hover:text-[#5e35b1] transition-all bg-[#7c4dff]/5 px-1.5 py-0.5 rounded-md mx-0.5 inline-block"
+                        >
+                            {linkText}
+                        </Link>
+                    );
+                    lastIndex = regex.lastIndex;
+                }
+
+                // Додаємо залишок тексту після останнього посилання в рядку
+                if (lastIndex < line.length) {
+                    parts.push(line.substring(lastIndex));
+                }
+
+                // Якщо рядок був порожнім, рендеримо відступ, інакше — контент рядка
+                return (
+                    <p key={lineIdx} className="text-base text-[#1a1535] leading-relaxed min-h-[1.5rem]">
+                        {parts.length > 0 ? parts : line}
+                    </p>
+                );
+            })}
+        </div>
+    );
 }
 
 function HomeContent() {

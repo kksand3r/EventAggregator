@@ -180,9 +180,10 @@ app.post('/api/mcp-search', async (req, res) => {
                 });
             }
 
-            console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.stringify(jsonResponse, null, 2));
+            console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.(jsonRespostringifynse, null, 2));
             let candidate = jsonResponse.candidates?.[0];
             let part = candidate?.content?.parts?.[0];
+
 
             if (candidate?.content) {
                 conversationHistory.push(candidate.content);
@@ -202,8 +203,7 @@ app.post('/api/mcp-search', async (req, res) => {
                         parts: [{
                             functionResponse: {
                                 name: name,
-                                response: { result: toolResult.content }
-                            }
+                                response: { output: JSON.stringify(toolResult.content) } // 🌟 ВИПРАВЛЕНО НА output                            }
                         }]
                     });
                 } catch (toolError) {
