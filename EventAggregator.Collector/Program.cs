@@ -27,6 +27,10 @@ try
     builder.Logging.AddSerilog();
     
     builder.Services.AddInfrastructure(builder.Configuration);
+    
+    builder.Services.AddHttpClient<GeminiService>();
+    builder.Services.AddTransient<GeminiService>();
+
     builder.Services.AddTransient<ScrapingService>();
     builder.Services.AddTransient<IEventScraper, KarabasScraper>();
     //builder.Services.AddTransient<IEventScraper, ConcertUaScraper>();
