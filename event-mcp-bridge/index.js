@@ -74,7 +74,7 @@ app.post('/api/mcp-search', async (req, res) => {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
         let geminiRequestBody = {
-            contents: [{ parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь.` }] }],
+            contents: [{ parts: [{ text: `Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитує: "${query}". Використовуй інструменти пошуку Elasticsearch, щоб знайти актуальні події та дати відповідь. Обмежуй розмір вибірки (size) до розумних меж (наприклад, 5-10), щоб не перевантажувати контекст.` }] }],
             tools: [{ functionDeclarations }],
             toolConfig: { functionCallingConfig: { mode: "AUTO" } }
         };
@@ -86,6 +86,13 @@ app.post('/api/mcp-search', async (req, res) => {
         });
 
         let jsonResponse = await response.json();
+
+        // Перевірка помилки першого кроку Gemini
+        if (jsonResponse.error) {
+            console.error("❌ Gemini Initial Request Error:", jsonResponse.error);
+            return res.status(400).json({ error: jsonResponse.error.message, agentMessage: "Помилка ініціалізації запиту до ШІ.", rawMcpData: [] });
+        }
+
         console.log("[Gemini Response]:", JSON.stringify(jsonResponse, null, 2));
         let candidate = jsonResponse.candidates?.[0];
         let part = candidate?.content?.parts?.[0];
@@ -93,6 +100,12 @@ app.post('/api/mcp-search', async (req, res) => {
 
         if (part?.functionCall) {
             const { name, args } = part.functionCall;
+
+            // Якщо модель за замовчуванням забула вказати ліміт, примусово обмежуємо, щоб не впасти по ліміту токенів
+            if (args && !args.size) {
+                args.size = 10;
+            }
+
             const toolResult = await mcpClient.callTool({ name, arguments: args });
 
             const finalRequestBody = {
@@ -119,6 +132,16 @@ app.post('/api/mcp-search', async (req, res) => {
 
             let finalJson = await finalResponse.json();
             console.log("[Gemini Final Response]:", JSON.stringify(finalJson, null, 2));
+
+            // 🌟 ВИПРАВЛЕННЯ: Обробка помилок (наприклад, якщо payload завеликий через велику відповідь від Elastic)
+            if (finalJson.error) {
+                console.error("❌ Gemini Final Analysis Error:", finalJson.error);
+                return res.json({
+                    agentMessage: "Я знайшов події в базі даних, проте опис результатів завеликий для формування текстового резюме через ШІ. Дивіться список подій нижче.",
+                    rawMcpData: toolResult.content
+                });
+            }
+
             let finalTxt = finalJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
             return res.json({

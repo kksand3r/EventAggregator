@@ -65,26 +65,41 @@ namespace EventAggregator.Api.Controllers
                 {
                     foreach (var item in rawMcpData.EnumerateArray())
                     {
-                        // Текст від MCP-сервера Elastic зазвичай приходить у властивості "text" у форматі рядка JSON
                         if (item.TryGetProperty("text", out var textProp))
                         {
                             var hitText = textProp.GetString();
+                            if (string.IsNullOrWhiteSpace(hitText)) continue;
+            
                             try
                             {
-                                // Десеріалізуємо сирий документ у нашу доменну модель ScrapedEvent
-                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(hitText, new JsonSerializerOptions
+                                // 1. Парсимо сирий JSON від Elasticsearch
+                                using var esDoc = JsonDocument.Parse(hitText);
+                
+                                // 2. Шукаємо шлях: hits -> hits -> масив результатів
+                                if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
+                                    topHits.TryGetProperty("hits", out var hitsArray))
                                 {
-                                    PropertyNameCaseInsensitive = true
-                                });
+                                    foreach (var hit in hitsArray.EnumerateArray())
+                                    {
+                                        // 3. Дані самої події лежать у полі _source
+                                        if (hit.TryGetProperty("_source", out var source))
+                                        {
+                                            var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), new JsonSerializerOptions
+                                            {
+                                                PropertyNameCaseInsensitive = true
+                                            });
 
-                                if (scrapedEvent != null)
-                                {
-                                    eventsList.Add(scrapedEvent.ToDto());
+                                            if (scrapedEvent != null)
+                                            {
+                                                eventsList.Add(scrapedEvent.ToDto());
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            catch (JsonException)
+                            catch (Exception ex)
                             {
-                                // Якщо формат всередині text відрізняється, пропускаємо або логуємо
+                                Console.WriteLine($"Помилка парсингу результатів MCP: {ex.Message}");
                             }
                         }
                     }
