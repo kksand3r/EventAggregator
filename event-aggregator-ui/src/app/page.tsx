@@ -102,7 +102,7 @@ function HomeContent() {
             />
 
             <main className="container mx-auto px-6 sm:px-8 py-10 pb-20 max-w-full">
-                {filters.search.trim() && filters.searchMode === 'classic' && !hideSearch && (
+                {filters.search.trim() && !hideSearch && (
                     <section className="mb-14">
                         <h2 className="text-2xl font-bold mb-7 flex items-center gap-2 text-[#1a1535]">
                             <Compass className="h-6 w-6 text-[#7c4dff]" />
