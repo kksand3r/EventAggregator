@@ -1,4 +1,4 @@
-﻿name: Force New Scraper Run
+﻿name: Daily Scraper Job
 
 on:
   schedule:
