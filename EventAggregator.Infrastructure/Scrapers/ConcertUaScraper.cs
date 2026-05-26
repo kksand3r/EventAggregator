@@ -17,6 +17,7 @@ public class ConcertUaScraper : IEventScraper
 {
     public string ProviderName => "Concert.ua";
     private readonly ILogger<ConcertUaScraper> _logger;
+    // Семафор на рівні міст — 5 міст паралельно, всередині кожного міста категорії теж паралельні
     private readonly SemaphoreSlim _semaphore = new(5);
 
     private readonly string[] _citySlugs =
@@ -57,23 +58,23 @@ public class ConcertUaScraper : IEventScraper
     {
         var allCollectedEvents = new List<ScrapedEvent>();
 
-        // AllowAutoRedirect = false — щоб 302 не слідував на all-categories і не дублював події
         using var httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
         httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
         _logger.LogInformation("🚀 Початок скрапінгу Concert.ua по категоріях...");
 
-        var tasks = _citySlugs.Select(async citySlug =>
+        var cityTasks = _citySlugs.Select(async citySlug =>
         {
             await _semaphore.WaitAsync();
             _logger.LogInformation("🏙️ Concert.ua: Сканування міста {City}...", citySlug.ToUpper());
 
             try
             {
-                int cityEventsCount = 0;
-
-                foreach (var (categoryKey, categoryPath) in CategoryPaths)
+                // Всі категорії одного міста — паралельно
+                var categoryTasks = CategoryPaths.Select(async kvp =>
                 {
+                    var (categoryKey, categoryPath) = kvp;
+                    var localEvents = new List<ScrapedEvent>();
                     string targetUrl = $"https://concert.ua/uk/catalog/{citySlug}/{categoryPath}";
 
                     HttpResponseMessage response;
@@ -84,22 +85,20 @@ public class ConcertUaScraper : IEventScraper
                     catch (Exception ex)
                     {
                         _logger.LogDebug("Помилка запиту {Url}: {Msg}", targetUrl, ex.Message);
-                        continue;
+                        return localEvents;
                     }
 
-                    // 302 = немає подій цієї категорії в місті, пропускаємо
+                    // 302 = немає подій цієї категорії в місті
                     if (!response.IsSuccessStatusCode)
                     {
                         _logger.LogDebug("⚠️ {City}/{Category}: {Code} — пропускаємо", citySlug, categoryPath, (int)response.StatusCode);
-                        continue;
+                        return localEvents;
                     }
 
                     string htmlContent = await response.Content.ReadAsStringAsync();
-
                     var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>", RegexOptions.IgnoreCase);
-                    var matches = jsonLdRegex.Matches(htmlContent);
 
-                    foreach (Match match in matches)
+                    foreach (Match match in jsonLdRegex.Matches(htmlContent))
                     {
                         try
                         {
@@ -148,20 +147,30 @@ public class ConcertUaScraper : IEventScraper
                                 };
 
                                 newEvent.GenerateDeterministicId();
-
-                                lock (allCollectedEvents)
-                                {
-                                    if (!allCollectedEvents.Any(e => e.Url == newEvent.Url))
-                                    {
-                                        allCollectedEvents.Add(newEvent);
-                                        cityEventsCount++;
-                                    }
-                                }
+                                localEvents.Add(newEvent);
                             }
                         }
                         catch (Exception ex)
                         {
                             _logger.LogDebug("Помилка парсингу JSON-LD блоку: {Msg}", ex.Message);
+                        }
+                    }
+
+                    return localEvents;
+                });
+
+                var results = await Task.WhenAll(categoryTasks);
+
+                // Зливаємо результати всіх категорій, фільтруємо дублікати по URL
+                int cityEventsCount = 0;
+                foreach (var ev in results.SelectMany(r => r))
+                {
+                    lock (allCollectedEvents)
+                    {
+                        if (!allCollectedEvents.Any(e => e.Url == ev.Url))
+                        {
+                            allCollectedEvents.Add(ev);
+                            cityEventsCount++;
                         }
                     }
                 }
@@ -181,7 +190,7 @@ public class ConcertUaScraper : IEventScraper
             }
         });
 
-        await Task.WhenAll(tasks);
+        await Task.WhenAll(cityTasks);
 
         _logger.LogInformation("🏁 Concert.ua: Збір завершено. Фінальний звіт провайдера:");
         _logger.LogInformation("=================================================");
