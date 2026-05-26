@@ -146,7 +146,34 @@ public class ConcertUaScraper : IEventScraper
         });
 
         await Task.WhenAll(tasks);
-        _logger.LogInformation("🏁 Concert.ua: Збір завершено. Всього знайдено подій: {Count}", allCollectedEvents.Count);
+
+        _logger.LogInformation("🏁 Concert.ua: Збір завершено. Фінальний звіт провайдера:");
+        _logger.LogInformation("=================================================");
+
+        var statsByCity = allCollectedEvents
+            .GroupBy(e => e.CityUk)
+            .OrderByDescending(g => g.Count());
+
+        _logger.LogInformation("📌 Розподіл за МІСТАМИ:");
+        foreach (var group in statsByCity)
+        {
+            _logger.LogInformation("   📍 {City}: {Count} подій", group.Key, group.Count());
+        }
+
+        _logger.LogInformation("-------------------------------------------------");
+
+        var statsByCategory = allCollectedEvents
+            .GroupBy(e => e.Category)
+            .OrderByDescending(g => g.Count());
+
+        _logger.LogInformation("📌 Розподіл за КАТЕГОРІЯМИ:");
+        foreach (var group in statsByCategory)
+        {
+            _logger.LogInformation("   🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
+        }
+
+        _logger.LogInformation("=================================================");
+        _logger.LogInformation("🏁 Concert.ua: Всього знайдено унікальних подій: {Count}", allCollectedEvents.Count);
         
         return allCollectedEvents;
     }
