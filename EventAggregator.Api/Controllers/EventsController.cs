@@ -186,8 +186,9 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
+            // 🌟 ВИПРАВЛЕНО: Змінено "city.keyword" на "city", оскільки це чистий Keyword-тип
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city.keyword").Value(city.ToUpper())));
+                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToUpper())));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
                 filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
@@ -223,7 +224,8 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetMetadata()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                .Add("unique_cities", ag => ag.Terms(t => t.Field("city.keyword").Size(100)))
+                // 🌟 ВИПРАВЛЕНО: агрегація йде прямо по полю "city"
+                .Add("unique_cities", ag => ag.Terms(t => t.Field("city").Size(100)))
                 .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
             ));
 
@@ -242,7 +244,8 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetStats()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                .Add("events_by_city", ag => ag.Terms(t => t.Field("city.keyword").Size(10)))
+                // 🌟 ВИПРАВЛЕНО: аналогічно, рахуємо статистику по чистому "city"
+                .Add("events_by_city", ag => ag.Terms(t => t.Field("city").Size(10)))
                 .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
             ));
 
