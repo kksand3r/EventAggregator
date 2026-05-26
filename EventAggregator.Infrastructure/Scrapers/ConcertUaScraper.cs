@@ -30,9 +30,11 @@ public class ConcertUaScraper : IEventScraper
     private static readonly Dictionary<string, string> CategoryPaths = new()
     {
         { "concerts",  "concerts"  },
-        { "theatres",  "theatres"  },
-        { "stand-up",  "stand-up"  },
-        { "child",     "child"     },
+        { "theatres",  "theater"   },
+        { "stand-up",  "humor"     },
+        { "child",     "kids"      },
+        { "clubs",     "electronic"},
+        { "inshe",     "other"     },
         { "festivals", "festivals" }
     };
 
