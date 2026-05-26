@@ -9,7 +9,7 @@ interface FooterProps {
 const STATS = [
     {
         value: totalEvents > 999
-            ? `${Number((totalEvents / 1000).toFixed(1))}k` ль
+            ? `${Number((totalEvents / 1000).toFixed(1))}k` 
             : totalEvents.toString(),
         label: "Events"
     },
