@@ -19,14 +19,22 @@ public class ConcertUaScraper : IEventScraper
     private readonly ILogger<ConcertUaScraper> _logger;
     private readonly SemaphoreSlim _semaphore = new(5);
 
-    // Виправлені слаги згідно реальних URL concert.ua
-    // (zhitomir, chernivtsy, khmelnitsky, chernigiv — виправлено; sumy — відсутній на сайті)
     private readonly string[] _citySlugs =
     {
         "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         "vinnytsia", "poltava", "zhitomir", "zaporizhzhia", "ternopil",
         "chernivtsy", "chernigiv", "khmelnitsky", "rivne",
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+    };
+
+    // Категорії відповідають реальним URL concert.ua/uk/catalog/{city}/{category}
+    private static readonly Dictionary<string, string> CategoryPaths = new()
+    {
+        { "concerts",  "concerts"  },
+        { "theatres",  "theatres"  },
+        { "stand-up",  "stand-up"  },
+        { "child",     "child"     },
+        { "festivals", "festivals" }
     };
 
     private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)
@@ -51,7 +59,7 @@ public class ConcertUaScraper : IEventScraper
         using var httpClient = new HttpClient();
         httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
-        _logger.LogInformation("🚀 Початок швидкого API-скрапінгу Concert.ua через мікророзметку JSON-LD...");
+        _logger.LogInformation("🚀 Початок скрапінгу Concert.ua по категоріях...");
 
         var tasks = _citySlugs.Select(async citySlug =>
         {
@@ -60,87 +68,98 @@ public class ConcertUaScraper : IEventScraper
 
             try
             {
-                string targetUrl = $"https://concert.ua/uk/{citySlug}";
-                var response = await httpClient.GetAsync(targetUrl);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("⚠️ Не вдалося завантажити сторінку для міста {City}: {Code} → {Url}", citySlug, response.StatusCode, targetUrl);
-                    return;
-                }
-
-                string htmlContent = await response.Content.ReadAsStringAsync();
-
-                var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>", RegexOptions.IgnoreCase);
-                var matches = jsonLdRegex.Matches(htmlContent);
-
                 int cityEventsCount = 0;
 
-                foreach (Match match in matches)
+                foreach (var (categoryKey, categoryPath) in CategoryPaths)
                 {
+                    string targetUrl = $"https://concert.ua/uk/catalog/{citySlug}/{categoryPath}";
+
+                    HttpResponseMessage response;
                     try
                     {
-                        string jsonRaw = match.Groups[1].Value.Trim();
-                        using var doc = JsonDocument.Parse(jsonRaw);
-                        var root = doc.RootElement;
-
-                        // Обробляємо і масиви подій, і поодинокі об'єкти
-                        var elementsToProcess = new List<JsonElement>();
-                        if (root.ValueKind == JsonValueKind.Array)
-                            elementsToProcess.AddRange(root.EnumerateArray());
-                        else if (root.ValueKind == JsonValueKind.Object)
-                            elementsToProcess.Add(root);
-
-                        foreach (var node in elementsToProcess)
-                        {
-                            if (!node.TryGetProperty("@type", out var typeProp) ||
-                                !(typeProp.GetString()?.Contains("Event") ?? false))
-                                continue;
-
-                            string title = node.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Без назви" : "Без назви";
-                            string url = node.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
-                            string imageUrl = node.TryGetProperty("image", out var imgProp) ? imgProp.GetString() ?? "" : "";
-                            string startDateRaw = node.TryGetProperty("startDate", out var startProp) ? startProp.GetString() ?? "" : "";
-
-                            string description = node.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "";
-                            if (string.IsNullOrWhiteSpace(description)) description = "Опис доступний на сайті за посиланням.";
-
-                            if (string.IsNullOrEmpty(url)) continue;
-                            if (url.StartsWith("/")) url = "https://concert.ua" + url;
-
-                            DateTime? parsedDate = null;
-                            if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
-                                parsedDate = dt;
-
-                            var newEvent = new ScrapedEvent
-                            {
-                                Title = title,
-                                Url = url,
-                                Source = ProviderName,
-                                Description = description,
-                                Date = parsedDate.HasValue ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm") : startDateRaw,
-                                ParsedDate = parsedDate,
-                                City = citySlug.ToUpper(),
-                                CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLower(), citySlug),
-                                Category = GuessCategory(url, title),
-                                ImageUrl = imageUrl
-                            };
-
-                            newEvent.GenerateDeterministicId();
-
-                            lock (allCollectedEvents)
-                            {
-                                if (!allCollectedEvents.Any(e => e.Url == newEvent.Url))
-                                {
-                                    allCollectedEvents.Add(newEvent);
-                                    cityEventsCount++;
-                                }
-                            }
-                        }
+                        response = await httpClient.GetAsync(targetUrl);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogDebug("Помилка парсингу окремого блоку JSON-LD: {Msg}", ex.Message);
+                        _logger.LogDebug("Помилка запиту {Url}: {Msg}", targetUrl, ex.Message);
+                        continue;
+                    }
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogDebug("⚠️ {City}/{Category}: {Code}", citySlug, categoryPath, response.StatusCode);
+                        continue;
+                    }
+
+                    string htmlContent = await response.Content.ReadAsStringAsync();
+
+                    var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>", RegexOptions.IgnoreCase);
+                    var matches = jsonLdRegex.Matches(htmlContent);
+
+                    foreach (Match match in matches)
+                    {
+                        try
+                        {
+                            string jsonRaw = match.Groups[1].Value.Trim();
+                            using var doc = JsonDocument.Parse(jsonRaw);
+                            var root = doc.RootElement;
+
+                            var elementsToProcess = new List<JsonElement>();
+                            if (root.ValueKind == JsonValueKind.Array)
+                                elementsToProcess.AddRange(root.EnumerateArray());
+                            else if (root.ValueKind == JsonValueKind.Object)
+                                elementsToProcess.Add(root);
+
+                            foreach (var node in elementsToProcess)
+                            {
+                                if (!node.TryGetProperty("@type", out var typeProp) ||
+                                    !(typeProp.GetString()?.Contains("Event") ?? false))
+                                    continue;
+
+                                string title = node.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Без назви" : "Без назви";
+                                string url = node.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
+                                string imageUrl = node.TryGetProperty("image", out var imgProp) ? imgProp.GetString() ?? "" : "";
+                                string startDateRaw = node.TryGetProperty("startDate", out var startProp) ? startProp.GetString() ?? "" : "";
+                                string description = node.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "";
+                                if (string.IsNullOrWhiteSpace(description)) description = "Опис доступний на сайті за посиланням.";
+
+                                if (string.IsNullOrEmpty(url)) continue;
+                                if (url.StartsWith("/")) url = "https://concert.ua" + url;
+
+                                DateTime? parsedDate = null;
+                                if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
+                                    parsedDate = dt;
+
+                                var newEvent = new ScrapedEvent
+                                {
+                                    Title = title,
+                                    Url = url,
+                                    Source = ProviderName,
+                                    Description = description,
+                                    Date = parsedDate.HasValue ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm") : startDateRaw,
+                                    ParsedDate = parsedDate,
+                                    City = citySlug.ToUpper(),
+                                    CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLower(), citySlug),
+                                    Category = categoryKey, // категорія точна — з URL
+                                    ImageUrl = imageUrl
+                                };
+
+                                newEvent.GenerateDeterministicId();
+
+                                lock (allCollectedEvents)
+                                {
+                                    if (!allCollectedEvents.Any(e => e.Url == newEvent.Url))
+                                    {
+                                        allCollectedEvents.Add(newEvent);
+                                        cityEventsCount++;
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug("Помилка парсингу JSON-LD блоку: {Msg}", ex.Message);
+                        }
                     }
                 }
 
@@ -180,20 +199,5 @@ public class ConcertUaScraper : IEventScraper
         _logger.LogInformation("🏁 Concert.ua: Всього знайдено унікальних подій: {Count}", allCollectedEvents.Count);
 
         return allCollectedEvents;
-    }
-
-    private static string GuessCategory(string url, string title)
-    {
-        var combined = $"{url} {title}".ToLower();
-
-        return combined switch
-        {
-            var c when c.Contains("theatre") || c.Contains("театр") || c.Contains("вистава") || c.Contains("opera") || c.Contains("балет") => "theatres",
-            var c when c.Contains("concert") || c.Contains("концерт") || c.Contains("pop") || c.Contains("rock") || c.Contains("музика") || c.Contains("jazz") || c.Contains("оркестр") => "concerts",
-            var c when c.Contains("stand-up") || c.Contains("стендап") || c.Contains("гумор") || c.Contains("комедія") => "stand-up",
-            var c when c.Contains("child") || c.Contains("дітям") || c.Contains("дитяч") || c.Contains("ляльковий") => "child",
-            var c when c.Contains("festival") || c.Contains("фестиваль") => "festivals",
-            _ => "inshe"
-        };
     }
 }
