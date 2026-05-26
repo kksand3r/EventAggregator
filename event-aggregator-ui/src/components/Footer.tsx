@@ -6,17 +6,16 @@ interface FooterProps {
     totalCategories: number;
 }
 
-export default function Footer({ totalEvents, totalCities, totalCategories }: FooterProps) {
-    const STATS = [
-        {
-            value: totalEvents > 999
-                ? `${(totalEvents / 1000).toFixed(1)}k`
-                : totalEvents.toString(),
-            label: "Events"
-        },
-        { value: totalCities.toString(), label: "Cities" },
-        { value: totalCategories.toString(), label: "Categories" },
-    ];
+const STATS = [
+    {
+        value: totalEvents > 999
+            ? `${Number((totalEvents / 1000).toFixed(1))}k` ль
+            : totalEvents.toString(),
+        label: "Events"
+    },
+    { value: totalCities.toString(), label: "Cities" },
+    { value: totalCategories.toString(), label: "Categories" },
+];
 
     return (
         <footer className="border-t border-[#d2d2e1]/60 bg-[#dcdcEB]/65 backdrop-blur-[16px] py-[28px]">
