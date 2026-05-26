@@ -1,6 +1,4 @@
-﻿using System.Text;
-using Elastic.Clients.Elasticsearch;
-using Elastic.Clients.Elasticsearch.QueryDsl;
+﻿using Elastic.Clients.Elasticsearch;
 using EventAggregator.Domain.Interfaces;
 using EventAggregator.Domain.Models;
 using Microsoft.Extensions.Logging;
@@ -32,7 +30,7 @@ public class ElasticEventRepository : IEventRepository
                     .Text(t => t.Category, g => g
                         .Analyzer("ukrainian")
                         .Fields(f => f
-                            .Keyword("keyword") 
+                            .Keyword("keyword")
                         )
                     )
                     .Keyword(k => k.City)
@@ -50,7 +48,7 @@ public class ElasticEventRepository : IEventRepository
 
         var response = await _client.BulkAsync(b => b
                 .Index(IndexName)
-                .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id)) 
+                .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id))
             , ct);
 
         if (response.IsValidResponse)

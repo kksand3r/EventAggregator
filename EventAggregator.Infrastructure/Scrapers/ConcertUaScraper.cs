@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
+using System.Text.RegularExpressions;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
-using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 
@@ -11,7 +11,7 @@ public class ConcertUaScraper : IEventScraper
 {
     public string ProviderName => "Concert.ua";
     private readonly ILogger<ConcertUaScraper> _logger;
-    private readonly SemaphoreSlim _semaphore = new(4);
+    private readonly SemaphoreSlim _semaphore = new(5); 
 
     private readonly string[] _citySlugs =
     {
@@ -40,122 +40,104 @@ public class ConcertUaScraper : IEventScraper
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
         var allCollectedEvents = new List<ScrapedEvent>();
-        using var mainPage = await browser.NewPageAsync();
-        await mainPage.SetUserAgentAsync(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
-        var eventLinks = new List<(string Title, string Url, string CitySlug)>();
+        _logger.LogInformation("🚀 Початок швидкого API-скрапінгу Concert.ua через мікророзметку JSON-LD...");
 
-        foreach (var citySlug in _citySlugs)
-        {
-            _logger.LogInformation("🏙️ Concert.ua: Пошук у місті: {City}", citySlug.ToUpper());
-            try
-            {
-                await mainPage.GoToAsync($"https://concert.ua/uk/{citySlug}", WaitUntilNavigation.Networkidle2);
-
-                var links = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
-                    return Array.from(document.querySelectorAll('a[href*=""/event/""]'))
-                        .map(card => ({
-                            title: card.innerText.split('\n')[0].trim(),
-                            url: card.getAttribute('href')
-                        })).filter(e => e.title.length > 2);
-                }");
-
-                foreach (var link in links)
-                {
-                    string rawUrl = link.GetProperty("url").GetString() ?? "";
-                    if (string.IsNullOrEmpty(rawUrl)) continue;
-
-                    string fullUrl = rawUrl.StartsWith("http") ? rawUrl : "https://concert.ua" + rawUrl.Split('?')[0];
-                    if (!eventLinks.Any(x => x.Url == fullUrl))
-                    {
-                        eventLinks.Add((link.GetProperty("title").GetString() ?? "Без назви", fullUrl, citySlug));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("❌ Помилка списку {City}: {Message}", citySlug, ex.Message);
-            }
-        }
-
-        _logger.LogInformation("🚀 Concert.ua: Детальний збір {Count} подій...", eventLinks.Count);
-
-        var tasks = eventLinks.Select(async item =>
+        var tasks = _citySlugs.Select(async citySlug =>
         {
             await _semaphore.WaitAsync();
+            _logger.LogInformation("🏙️ Concert.ua: Сканування міста {City}...", citySlug.ToUpper());
+
             try
             {
-                using var page = await browser.NewPageAsync();
-                await page.GoToAsync(item.Url, WaitUntilNavigation.Load);
+                string targetUrl = $"https://concert.ua/uk/{citySlug}";
+                var response = await httpClient.GetAsync(targetUrl);
 
-                var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
-                    const clean = (text) => text ? text.replace(/[\u00A0\t\r\n]+/g, ' ').replace(/\s\s+/g, ' ').trim() : '';
-                    const getTxt = (sel) => document.querySelector(sel)?.innerText || '';
-
-                    const categoryEl = document.querySelector('.event-main-info-tags__item');
-                    const category = clean(categoryEl?.innerText) || 'Подія';
-
-                    const imgEl = document.querySelector('picture.promo-events-slider-item__img img') 
-                               || document.querySelector('.event-page-top img') 
-                               || document.querySelector('img.promo-events-slider-item__img')
-                               || document.querySelector('meta[property=""og:image""]');
-                    
-                    let imageUrl = '';
-                    if (imgEl) {
-                        imageUrl = imgEl.tagName === 'META' ? imgEl.getAttribute('content') : imgEl.src;
-                    }
-
-                    return {
-                        Description: clean(getTxt('.event-content__description, .common-text, [class*=""description""]')) || 'Опис на сайті',
-                        Date: clean(getTxt('.event-info__item--date, [class*=""date""]')),
-                        City: clean(getTxt('.event-info__item--place, [class*=""location""]')),
-                        Category: category,
-                        ImageUrl: imageUrl
-                    };
-                }");
-
-                string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
-
-                string rawCategory = details.GetProperty("Category").GetString()?.ToLower() ?? "інше";
-                string mappedCategory = rawCategory switch
+                if (!response.IsSuccessStatusCode)
                 {
-                    var c when c.Contains("театр") || c.Contains("комедія") || c.Contains("вистава") => "theatres",
-                    var c when c.Contains("концерт") || c.Contains("поп") || c.Contains("рок") ||
-                               c.Contains("музика") => "concerts",
-                    var c when c.Contains("стендап") || c.Contains("stand-up") || c.Contains("гумор") => "stand-up",
-                    var c when c.Contains("дітям") || c.Contains("дитяч") => "child",
-                    var c when c.Contains("фестиваль") => "festivals",
-                    _ => "inshe"
-                };
-
-                var newEvent = new ScrapedEvent
-                {
-                    Title = item.Title,
-                    Url = item.Url,
-                    Source = ProviderName,
-                    Description = details.GetProperty("Description").GetString() ?? "Опис відсутній",
-                    Date = rawDate,
-                    ParsedDate = DateParser.ParseUkrainianDate(rawDate),
-                    City = item.CitySlug.ToUpper(),
-                    CityUk = CityTranslations.GetValueOrDefault(item.CitySlug.ToLower(), item.CitySlug),
-                    Category = mappedCategory,
-                    ImageUrl = details.GetProperty("ImageUrl").GetString() ?? ""
-                };
-
-                newEvent.GenerateDeterministicId();
-                
-                lock (allCollectedEvents)
-                {
-                    allCollectedEvents.Add(newEvent);
+                    _logger.LogWarning("⚠️ Не вдалося завантажити сторінку для міста {City}: {Code}", citySlug, response.StatusCode);
+                    return;
                 }
 
-                _logger.LogInformation("✅ Concert.ua: {Title} -> {Category}", newEvent.Title, newEvent.Category);
-                await Task.Delay(Random.Shared.Next(300, 700));
+                string htmlContent = await response.Content.ReadAsStringAsync();
+
+                var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>", RegexOptions.IgnoreCase);
+                var matches = jsonLdRegex.Matches(htmlContent);
+
+                int cityEventsCount = 0;
+
+                foreach (Match match in matches)
+                {
+                    try
+                    {
+                        string jsonRaw = match.Groups[1].Value.Trim();
+                        using var doc = JsonDocument.Parse(jsonRaw);
+                        var root = doc.RootElement;
+
+                        if (!root.TryGetProperty("@type", out var typeProp) || !typeProp.GetString().Contains("Event"))
+                            continue;
+
+                        string title = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Без назви" : "Без назви";
+                        string url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
+                        string imageUrl = root.TryGetProperty("image", out var imgProp) ? imgProp.GetString() ?? "" : "";
+                        string startDateRaw = root.TryGetProperty("startDate", out var startProp) ? startProp.GetString() ?? "" : "";
+                        
+                        string description = root.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "";
+                        if (string.IsNullOrWhiteSpace(description)) description = "Опис доступний на сайті за посиланням.";
+
+                        if (string.IsNullOrEmpty(url)) continue;
+                        if (url.StartsWith("/")) url = "https://concert.ua" + url;
+
+                        DateTime? parsedDate = null;
+                        if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
+                        {
+                            parsedDate = dt;
+                        }
+
+                        string mappedCategory = GuessCategory(url, title);
+
+                        var newEvent = new ScrapedEvent
+                        {
+                            Title = title,
+                            Url = url,
+                            Source = ProviderName,
+                            Description = description,
+                            Date = parsedDate.HasValue ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm") : startDateRaw,
+                            ParsedDate = parsedDate,
+                            City = citySlug.ToUpper(),
+                            CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLower(), citySlug),
+                            Category = mappedCategory,
+                            ImageUrl = imageUrl
+                        };
+
+                        newEvent.GenerateDeterministicId();
+
+                        lock (allCollectedEvents)
+                        {
+                            if (!allCollectedEvents.Any(e => e.Url == newEvent.Url))
+                            {
+                                allCollectedEvents.Add(newEvent);
+                                cityEventsCount++;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug("Помилка парсингу окремого блоку JSON-LD: {Msg}", ex.Message);
+                    }
+                }
+
+                if (cityEventsCount > 0)
+                {
+                    _logger.LogInformation("✅ Concert.ua: Отримано {Count} подій для міста {City}", cityEventsCount, citySlug.ToUpper());
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("⚠️ Пропущено {Url}: {Msg}", item.Url, ex.Message);
+                _logger.LogError("❌ Помилка збору міста {City}: {Message}", citySlug, ex.Message);
             }
             finally
             {
@@ -164,6 +146,23 @@ public class ConcertUaScraper : IEventScraper
         });
 
         await Task.WhenAll(tasks);
+        _logger.LogInformation("🏁 Concert.ua: Збір завершено. Всього знайдено подій: {Count}", allCollectedEvents.Count);
+        
         return allCollectedEvents;
+    }
+
+    private static string GuessCategory(string url, string title)
+    {
+        var combined = $"{url} {title}".ToLower();
+
+        return combined switch
+        {
+            var c when c.Contains("theatre") || c.Contains("театр") || c.Contains("вистава") || c.Contains("opera") || c.Contains("балет") => "theatres",
+            var c when c.Contains("concert") || c.Contains("концерт") || c.Contains("pop") || c.Contains("rock") || c.Contains("музика") || c.Contains("jazz") || c.Contains("оркестр") => "concerts",
+            var c when c.Contains("stand-up") || c.Contains("стендап") || c.Contains("гумор") || c.Contains("комедія") => "stand-up",
+            var c when c.Contains("child") || c.Contains("дітям") || c.Contains("дитяч") || c.Contains("ляльковий") => "child",
+            var c when c.Contains("festival") || c.Contains("фестиваль") => "festivals",
+            _ => "inshe"
+        };
     }
 }

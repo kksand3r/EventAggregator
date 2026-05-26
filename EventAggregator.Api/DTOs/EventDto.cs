@@ -1,33 +1,28 @@
-﻿using Microsoft.AspNetCore.WebUtilities; 
-using System.Text;
-using EventAggregator.Domain.Models;
+﻿using EventAggregator.Domain.Models;
 
 namespace EventAggregator.Api.DTOs
 {
     public class EventDto
     {
-        public string Id { get; set; } = string.Empty; 
+        public string Id { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
-        public string Date { get; set; } = string.Empty;   
+        public string Date { get; set; } = string.Empty;
         public string City { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
         public string Source { get; set; } = string.Empty;
-        public long ViewsCount { get; set; } 
+        public long ViewsCount { get; set; }
         public string ImageUrl { get; set; } = string.Empty;
     }
-    
+
     public static class EventMapper
     {
         public static EventDto ToDto(this ScrapedEvent e)
         {
-            // 🌟 ВИПРАВЛЕННЯ: Більше ніяких Base64! 
-            // Просто повертаємо чистий DTO зі справжнім системним UUID.
-
             return new EventDto
             {
-                Id = e.Id, 
+                Id = e.Id,
                 Title = e.Title,
                 Url = e.Url,
                 Date = e.ParsedDate?.ToString("dd.MM.yyyy HH:mm") ?? e.Date,
