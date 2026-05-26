@@ -22,21 +22,21 @@ public class ElasticEventRepository : IEventRepository
         var exists = await _client.Indices.ExistsAsync(IndexName, ct);
         if (exists.Exists) return;
 
-        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch...", IndexName);
+        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch з українською морфологією...", IndexName);
 
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
-                    .Text(t => t.Category, g => g
+                    .Title(t => t.Title, g => g.Analyzer("ukrainian")) // 🌟 Український аналізатор для назви
+                    .Description(d => d.Description, g => g.Analyzer("ukrainian")) // 🌟 Український аналізатор для опису
+                    .Category(t => t.Category, g => g
                         .Analyzer("ukrainian")
                         .Fields(f => f
                             .Keyword("keyword")
                         )
                     )
                     .Keyword(k => k.City)
-                    .Text(t => t.CityUk, t => t.Analyzer("ukrainian"))
-                    .Text(t => t.Title)
-                    .Text(t => t.Description)
+                    .CityUk(t => t.CityUk, g => g.Analyzer("ukrainian"))
                 )
             ), ct);
     }

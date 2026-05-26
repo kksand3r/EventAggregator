@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
+using EventAggregator.Domain.Parsing;
 using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
@@ -231,7 +232,7 @@ public class KarabasScraper : IEventScraper
                         Description = details.GetProperty("Description").GetString() ?? "",
                         Date = rawDate,
                         ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
-                        City = item.City.ToUpper(),
+                        City = CityNormalizer.Normalize(item.City),
                         CityUk = CityTranslations.GetValueOrDefault(item.City.ToLower(), item.City),
                         Category = item.Category,
                         ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 

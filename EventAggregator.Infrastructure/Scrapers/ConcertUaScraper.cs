@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
+using EventAggregator.Domain.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 
@@ -140,7 +141,7 @@ public class ConcertUaScraper : IEventScraper
                                     Description = description,
                                     Date = parsedDate.HasValue ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm") : startDateRaw,
                                     ParsedDate = parsedDate,
-                                    City = citySlug.ToUpper(),
+                                    City = CityNormalizer.Normalize(citySlug),
                                     CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLower(), citySlug),
                                     Category = categoryKey,
                                     ImageUrl = imageUrl
