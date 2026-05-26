@@ -76,7 +76,10 @@ export default function Header({
                                     {tab.label}
                                     {tab.count != null && tab.count > 0 && (
                                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full leading-none ${active ? "bg-white/25 text-white" : "bg-[#7c4dff]/12 text-[#7c4dff]"}`}>
-                                            {tab.count > 999 ? `${Math.floor(tab.count / 1000)}k` : tab.count}
+                                            {/* 🌟 Оновлена математика форматування лічильника */}
+                                            {tab.count > 999
+                                                ? `${Number((tab.count / 1000).toFixed(1))}k`
+                                                : tab.count.toString()}
                                         </span>
                                     )}
                                 </button>
