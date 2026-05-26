@@ -8,7 +8,6 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    # ✅ Встановлюємо плагін при кожному старті контейнера
     command: >
       bash -c "
         bin/elasticsearch-plugin list | grep -q analysis-ukrainian ||
