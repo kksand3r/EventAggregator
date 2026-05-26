@@ -24,84 +24,116 @@ namespace EventAggregator.Api.Controllers
             _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
         }
 
-        [HttpGet("ai-search")]
-        public async Task<IActionResult> AiSearch([FromQuery] string? query)
+[HttpGet("ai-search")]
+public async Task<IActionResult> AiSearch([FromQuery] string? query)
+{
+    if (string.IsNullOrWhiteSpace(query)) 
+        return Ok(new { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
+
+    try
+    {
+        var requestBody = new { query = query };
+        var content = new StringContent(
+            JsonSerializer.Serialize(requestBody), 
+            Encoding.UTF8, 
+            "application/json"
+        );
+
+        var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
+        
+        if (!response.IsSuccessStatusCode)
+            return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
+
+        var jsonResponse = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(jsonResponse);
+        
+        var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
+        var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
+
+        var eventsList = new List<EventDto>();
+        
+        if (rawMcpData.ValueKind == JsonValueKind.Array)
         {
-            if (string.IsNullOrWhiteSpace(query)) 
-                return Ok(new { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
-
-            try
+            foreach (var item in rawMcpData.EnumerateArray())
             {
-                var requestBody = new { query = query };
-                var content = new StringContent(
-                    JsonSerializer.Serialize(requestBody), 
-                    Encoding.UTF8, 
-                    "application/json"
-                );
-
-                var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
-                
-                if (!response.IsSuccessStatusCode)
-                    return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
-
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(jsonResponse);
-                
-                var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
-                var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
-
-                var eventsList = new List<EventDto>();
-                
-                if (rawMcpData.ValueKind == JsonValueKind.Array)
+                if (item.TryGetProperty("text", out var textProp))
                 {
-                    foreach (var item in rawMcpData.EnumerateArray())
+                    var hitText = textProp.GetString();
+                    if (string.IsNullOrWhiteSpace(hitText)) continue;
+    
+                    try
                     {
-                        if (item.TryGetProperty("text", out var textProp))
+                        using var esDoc = JsonDocument.Parse(hitText);
+                        
+                        // Варіант 1: Стандартна структура Elasticsearch { "hits": { "hits": [ ... ] } }
+                        if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
+                            topHits.TryGetProperty("hits", out var hitsArray))
                         {
-                            var hitText = textProp.GetString();
-                            if (string.IsNullOrWhiteSpace(hitText)) continue;
-            
-                            try
+                            foreach (var hit in hitsArray.EnumerateArray())
                             {
-                                using var esDoc = JsonDocument.Parse(hitText);
-                
-                                if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
-                                    topHits.TryGetProperty("hits", out var hitsArray))
+                                if (hit.TryGetProperty("_source", out var source))
                                 {
-                                    foreach (var hit in hitsArray.EnumerateArray())
+                                    var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), new JsonSerializerOptions
                                     {
-                                        if (hit.TryGetProperty("_source", out var source))
-                                        {
-                                            var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), new JsonSerializerOptions
-                                            {
-                                                PropertyNameCaseInsensitive = true
-                                            });
+                                        PropertyNameCaseInsensitive = true
+                                    });
 
-                                            if (scrapedEvent != null)
-                                                eventsList.Add(scrapedEvent.ToDto());
+                                    if (scrapedEvent != null)
+                                    {
+                                        // 🌟 ВАЖЛИВИЙ ФІКС: якщо Id порожній, беремо його з метаданих _id
+                                        if (string.IsNullOrEmpty(scrapedEvent.Id) && hit.TryGetProperty("_id", out var idProp))
+                                        {
+                                            scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
                                         }
+                                        eventsList.Add(scrapedEvent.ToDto());
                                     }
                                 }
                             }
-                            catch (Exception ex)
+                        }
+                        // Варіант 2: Якщо MCP повернув прямий масив об'єктів
+                        else if (esDoc.RootElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var hit in esDoc.RootElement.EnumerateArray())
                             {
-                                Console.WriteLine($"Помилка парсингу результатів MCP: {ex.Message}");
+                                var source = hit.TryGetProperty("_source", out var s) ? s : hit;
+                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), new JsonSerializerOptions
+                                {
+                                    PropertyNameCaseInsensitive = true
+                                });
+
+                                if (scrapedEvent != null)
+                                {
+                                    if (string.IsNullOrEmpty(scrapedEvent.Id) && hit.TryGetProperty("_id", out var idProp))
+                                    {
+                                        scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
+                                    }
+                                    eventsList.Add(scrapedEvent.ToDto());
+                                }
                             }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Помилка парсингу результатів MCP: {ex.Message}");
+                    }
                 }
-
-                return Ok(new 
-                { 
-                    AgentMessage = agentMessage, 
-                    Events = eventsList 
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
             }
         }
+
+        // 🌟 ВАЖЛИВИЙ ФІКС: Видаляємо можливі дублікати перед відправкою на фронтенд
+        var uniqueEvents = eventsList.GroupBy(e => e.Id).Select(g => g.First()).ToList();
+
+        return Ok(new 
+        { 
+            AgentMessage = agentMessage, 
+            Events = uniqueEvents 
+        });
+    }
+    catch (Exception ex)
+    {
+        return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
+    }
+}
 
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
