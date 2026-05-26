@@ -1,6 +1,4 @@
-﻿using System.Text;
-using Elastic.Clients.Elasticsearch;
-using Elastic.Clients.Elasticsearch.QueryDsl;
+﻿using Elastic.Clients.Elasticsearch;
 using EventAggregator.Domain.Interfaces;
 using EventAggregator.Domain.Models;
 using Microsoft.Extensions.Logging;
@@ -22,24 +20,23 @@ public class ElasticEventRepository : IEventRepository
     public async Task EnsureIndexCreatedAsync(CancellationToken ct)
     {
         var exists = await _client.Indices.ExistsAsync(IndexName, ct);
-        if (exists.Exists) return; // Якщо індекс вже існує, код нижче не виконається!
+        if (exists.Exists) return;
 
-        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch...", IndexName);
+        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch з українською морфологією...", IndexName);
 
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
-                        .Text(t => t.Category, g => g
-                            .Analyzer("ukrainian")
-                            .Fields(f => f
-                                .Keyword("keyword") 
-                            )
+                    .Title(t => t.Title, g => g.Analyzer("ukrainian")) // 🌟 Український аналізатор для назви
+                    .Description(d => d.Description, g => g.Analyzer("ukrainian")) // 🌟 Український аналізатор для опису
+                    .Category(t => t.Category, g => g
+                        .Analyzer("ukrainian")
+                        .Fields(f => f
+                            .Keyword("keyword")
                         )
-                        .Keyword(k => k.City)
-                        .Text(t => t.CityUk, t => t.Analyzer("ukrainian"))
-                        .Text(t => t.Title)
-                        .Text(t => t.Description)
-                        .Date(d => d.ParsedDate) // <--- ДОДАЙТЕ ЦЕЙ РЯДОК
+                    )
+                    .Keyword(k => k.City)
+                    .CityUk(t => t.CityUk, g => g.Analyzer("ukrainian"))
                 )
             ), ct);
     }
@@ -51,7 +48,7 @@ public class ElasticEventRepository : IEventRepository
 
         var response = await _client.BulkAsync(b => b
                 .Index(IndexName)
-                .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id)) 
+                .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id))
             , ct);
 
         if (response.IsValidResponse)
