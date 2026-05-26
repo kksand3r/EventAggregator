@@ -24,6 +24,9 @@ namespace EventAggregator.Application.Services
 
         public async Task ProcessAllSourcesAsync(IBrowser browser, CancellationToken ct)
         {
+            // ✅ Створюємо індекс з правильним маппінгом до запису даних
+            await _repository.EnsureIndexCreatedAsync(ct);
+
             var allEvents = new List<ScrapedEvent>();
 
             foreach (var scraper in _scrapers)
