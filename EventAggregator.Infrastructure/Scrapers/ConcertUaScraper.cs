@@ -42,7 +42,11 @@ public class ConcertUaScraper : IEventScraper
         var allCollectedEvents = new List<ScrapedEvent>();
         
         using var httpClient = new HttpClient();
+        
         httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        httpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+        httpClient.DefaultRequestHeaders.Add("Accept-Language", "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7");
+        httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
 
         _logger.LogInformation("🚀 Початок швидкого API-скрапінгу Concert.ua через мікророзметку JSON-LD...");
 
@@ -53,6 +57,8 @@ public class ConcertUaScraper : IEventScraper
 
             try
             {
+                await Task.Delay(Random.Shared.Next(400, 800));
+
                 string targetUrl = $"https://concert.ua/uk/{citySlug}";
                 var response = await httpClient.GetAsync(targetUrl);
 
