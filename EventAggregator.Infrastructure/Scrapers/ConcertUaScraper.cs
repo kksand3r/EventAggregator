@@ -27,7 +27,6 @@ public class ConcertUaScraper : IEventScraper
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
-    // Категорії відповідають реальним URL concert.ua/uk/catalog/{city}/{category}
     private static readonly Dictionary<string, string> CategoryPaths = new()
     {
         { "concerts",  "concerts"  },
@@ -56,7 +55,8 @@ public class ConcertUaScraper : IEventScraper
     {
         var allCollectedEvents = new List<ScrapedEvent>();
 
-        using var httpClient = new HttpClient();
+        // AllowAutoRedirect = false — щоб 302 не слідував на all-categories і не дублював події
+        using var httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
         httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
         _logger.LogInformation("🚀 Початок скрапінгу Concert.ua по категоріях...");
@@ -85,9 +85,10 @@ public class ConcertUaScraper : IEventScraper
                         continue;
                     }
 
+                    // 302 = немає подій цієї категорії в місті, пропускаємо
                     if (!response.IsSuccessStatusCode)
                     {
-                        _logger.LogDebug("⚠️ {City}/{Category}: {Code}", citySlug, categoryPath, response.StatusCode);
+                        _logger.LogDebug("⚠️ {City}/{Category}: {Code} — пропускаємо", citySlug, categoryPath, (int)response.StatusCode);
                         continue;
                     }
 
@@ -140,7 +141,7 @@ public class ConcertUaScraper : IEventScraper
                                     ParsedDate = parsedDate,
                                     City = citySlug.ToUpper(),
                                     CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLower(), citySlug),
-                                    Category = categoryKey, // категорія точна — з URL
+                                    Category = categoryKey,
                                     ImageUrl = imageUrl
                                 };
 
