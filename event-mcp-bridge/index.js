@@ -116,19 +116,18 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        // ОНОВЛЕНИЙ ПРОМПТ ДЛЯ РОЗУМНОЇ ФІЛЬТРАЦІЇ
         let conversationHistory = [
             {
                 role: "user",
                 parts: [{ text: `
-Ти — розумний ШІ-асистент платформи EventSpace. Користувач запитав: "${query}".
+Ти — розумний ШІ-асистент платформи EventSpace. Користувач шукає події за допомогою запиту: "${query}".
 
-Твоя стратегія дій:
-1. АНАЛІЗ: Визнач місто, категорію (концерт, театр, стендап) та дату з запиту користувача.
-2. ФІЛЬТРАЦІЯ: Якщо користувач вказав місто (наприклад, "Рівне"), ти ПОВИНЕН використати цей фільтр через інструмент пошуку.
-3. КОНТЕКСТ: Якщо користувач питає "куди піти з дівчиною", шукай події категорій "concerts", "theatres" або "stand-up".
-4. ВИКОНАННЯ: Використовуй інструмент для пошуку, передаючи аргументи, які максимально звужують вибірку. Не додавай зайвих вимог до сортування, дозволь системі повернути найбільш релевантні події.
-5. ФОРМАТУВАННЯ: Відповідь має бути людяною, з описом подій. Виведи кожну знайдену подію у такому форматі: [Назва - Дата](/events/ID).
+СУВОРІ ПРАВИЛА ДЛЯ ФОРМУВАННЯ ЗАПИТУ В ELASTICSEARCH:
+1. Для пошуку використовуй простий повнотекстовий запит (match або multi_match). 
+2. Тобі НЕ потрібно перекладати назви міст чи категорій на англійську мову. Передавай слова українською мовою.
+3. Шукай місто за полем "cityUk", а категорію або суть заходу — за полями "category", "title" та "description".
+4. Сортуй результати за "parsedDate" у порядку "asc".
+5. Виведи у фінальній відповіді ВСІ знайдені події списком у форматі Markdown: [Назва - Дата](/events/ID).
         ` }]
             }
         ];
@@ -163,6 +162,7 @@ app.post('/api/mcp-search', async (req, res) => {
 
             if (candidate?.content) conversationHistory.push(candidate.content);
 
+            // ВИПРАВЛЕННЯ 1: Шукаємо потрібні частини у всьому масиві
             let functionCallPart = parts.find(p => p.functionCall);
             let textPart = parts.find(p => p.text);
 
@@ -171,6 +171,8 @@ app.post('/api/mcp-search', async (req, res) => {
                 try {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
 
+                    // ВИПРАВЛЕННЯ 2: Коректно витягуємо чистий JSON від Elasticsearch
+                    // Elastic MCP Server повертає текст у масиві об'єктів. Беремо саме його.
                     const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
                     if (toolTextContent) {
                         lastMcpData = [{ text: toolTextContent }];
@@ -191,7 +193,7 @@ app.post('/api/mcp-search', async (req, res) => {
                         parts: [{ functionResponse: { name: name, response: { error: toolError.message } } }]
                     });
                 }
-                continue;
+                continue; // Йдемо на наступну ітерацію циклу, щоб Gemini проаналізував дані
             }
 
             if (textPart) {
