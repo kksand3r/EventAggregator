@@ -183,6 +183,41 @@ public class KarabasScraper : IEventScraper
                             return str.replace(/ПОКАЗАТИ ЩЕ/g, '').replace(/\s+/g, ' ').trim();
                         };
 
+                        // 1. ШУКАЄМО ДАТУ В SEO-МІКРОРОЗМІТЦІ
+                        let isoDate = null;
+                        const jsonScripts = document.querySelectorAll('script[type=""application/ld+json""]');
+                        for (let script of jsonScripts) {
+                            try {
+                                const data = JSON.parse(script.innerText);
+                                const findDate = (obj) => {
+                                    if (!obj) return null;
+                                    if (obj.startDate) return obj.startDate;
+                                    if (Array.isArray(obj)) {
+                                        for (let item of obj) { const d = findDate(item); if(d) return d; }
+                                    }
+                                    if (typeof obj === 'object') {
+                                        for (let key in obj) { const d = findDate(obj[key]); if(d) return d; }
+                                    }
+                                    return null;
+                                };
+                                const found = findDate(data);
+                                if (found) { isoDate = found; break; }
+                            } catch(e) {}
+                        }
+
+                        // 2. ЗАПАСНИЙ ВАРІАНТ: Шукаємо UNIX-timestamp
+                        if (!isoDate) {
+                            const timeEl = document.querySelector('[data-event-time]');
+                            if (timeEl) {
+                                const unixSeconds = parseInt(timeEl.getAttribute('data-event-time'));
+                                if (!isNaN(unixSeconds)) {
+                                    isoDate = new Date(unixSeconds * 1000).toISOString();
+                                }
+                            }
+                        }
+
+                        // 3. СТАРИЙ ВАРІАНТ (Пошук по тексту)
+                        let rawDate = '';
                         const dateSelectors = [
                             '.date-time-location .date-time span', 
                             '.date-time span',                     
@@ -191,7 +226,6 @@ public class KarabasScraper : IEventScraper
                             '.data-time'
                         ];
 
-                        let rawDate = '';
                         for (let selector of dateSelectors) {
                             const el = document.querySelector(selector);
                             if (el && el.innerText.trim()) {
@@ -223,11 +257,26 @@ public class KarabasScraper : IEventScraper
                         return {
                             Description: clean(document.querySelector('.event-description, .about-event__text, #event-description')?.innerText),
                             Date: clean(rawDate),
+                            IsoDate: isoDate || '',
                             ImageUrl: imgUrl
                         };
                     }");
 
                     string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
+                    string isoDate = details.GetProperty("IsoDate").GetString() ?? string.Empty;
+                    
+                    DateTime? finalParsedDate = null;
+
+                    // Парсимо ISO дату з мікророзмітки або UNIX-часу
+                    if (!string.IsNullOrEmpty(isoDate) && DateTime.TryParse(isoDate, out var parsedDt))
+                    {
+                        finalParsedDate = parsedDt.ToUniversalTime();
+                    }
+                    else
+                    {
+                        // Якщо нічого не знайдено, пробуємо старий DateParser
+                        finalParsedDate = DateParser.ParseUkrainianDate(rawDate);
+                    }
                     
                     var newEvent = new ScrapedEvent
                     {
@@ -235,8 +284,8 @@ public class KarabasScraper : IEventScraper
                         Url = item.Url,
                         Source = ProviderName,
                         Description = details.GetProperty("Description").GetString() ?? "",
-                        Date = rawDate,
-                        ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
+                        Date = !string.IsNullOrEmpty(rawDate) ? rawDate : (finalParsedDate?.ToString("dd.MM.yyyy HH:mm") ?? ""),
+                        ParsedDate = finalParsedDate, 
                         City = item.City.ToUpper(),
                         CityUk = CityTranslations.GetValueOrDefault(item.City.ToLower(), item.City),
                         Category = item.Category,
@@ -246,7 +295,7 @@ public class KarabasScraper : IEventScraper
                     newEvent.GenerateDeterministicId();
                     
                     lock (allEvents) { allEvents.Add(newEvent); }
-                    _logger.LogInformation("✅ Karabas: {Title} [{City}]", newEvent.Title, newEvent.City);
+                    _logger.LogInformation("✅ Karabas: {Title} [{City}] (Дата: {Date})", newEvent.Title, newEvent.City, newEvent.Date);
                     
                     break; 
                     
