@@ -24,120 +24,116 @@ namespace EventAggregator.Api.Controllers
             _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
         }
 
-        [HttpGet("ai-search")]
-        public async Task<IActionResult> AiSearch([FromQuery] string? query)
+[HttpGet("ai-search")]
+public async Task<IActionResult> AiSearch([FromQuery] string? query)
+{
+    if (string.IsNullOrWhiteSpace(query)) 
+        return Ok(new { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
+
+    try
+    {
+        var requestBody = new { query = query };
+        var content = new StringContent(
+            JsonSerializer.Serialize(requestBody), 
+            Encoding.UTF8, 
+            "application/json"
+        );
+
+        var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
+        
+        if (!response.IsSuccessStatusCode)
+            return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
+
+        var jsonResponse = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(jsonResponse);
+        
+        var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
+        var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
+
+        var eventsList = new List<EventDto>();
+        
+        if (rawMcpData.ValueKind == JsonValueKind.Array)
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return Ok(new
-                    { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
-
-            try
+            foreach (var item in rawMcpData.EnumerateArray())
             {
-                var requestBody = new { query = query };
-                var content = new StringContent(
-                    JsonSerializer.Serialize(requestBody),
-                    Encoding.UTF8,
-                    "application/json"
-                );
-
-                var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
-
-                if (!response.IsSuccessStatusCode)
-                    return StatusCode((int)response.StatusCode,
-                        "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
-
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(jsonResponse);
-
-                var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
-                var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
-
-                var eventsList = new List<EventDto>();
-
-                if (rawMcpData.ValueKind == JsonValueKind.Array)
+                if (item.TryGetProperty("text", out var textProp))
                 {
-                    foreach (var item in rawMcpData.EnumerateArray())
+                    var hitText = textProp.GetString();
+                    if (string.IsNullOrWhiteSpace(hitText)) continue;
+    
+                    try
                     {
-                        if (item.TryGetProperty("text", out var textProp))
+                        using var esDoc = JsonDocument.Parse(hitText);
+                        
+                        // Варіант 1: Стандартна структура Elasticsearch { "hits": { "hits": [ ... ] } }
+                        if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
+                            topHits.TryGetProperty("hits", out var hitsArray))
                         {
-                            var hitText = textProp.GetString();
-                            if (string.IsNullOrWhiteSpace(hitText)) continue;
-
-                            try
+                            foreach (var hit in hitsArray.EnumerateArray())
                             {
-                                using var esDoc = JsonDocument.Parse(hitText);
-
-                                if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
-                                    topHits.TryGetProperty("hits", out var hitsArray))
+                                if (hit.TryGetProperty("_source", out var source))
                                 {
-                                    foreach (var hit in hitsArray.EnumerateArray())
+                                    var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), new JsonSerializerOptions
                                     {
-                                        if (hit.TryGetProperty("_source", out var source))
-                                        {
-                                            var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(
-                                                source.GetRawText(), new JsonSerializerOptions
-                                                {
-                                                    PropertyNameCaseInsensitive = true
-                                                });
+                                        PropertyNameCaseInsensitive = true
+                                    });
 
-                                            if (scrapedEvent != null)
-                                            {
-                                                if (string.IsNullOrEmpty(scrapedEvent.Id) &&
-                                                    hit.TryGetProperty("_id", out var idProp))
-                                                {
-                                                    scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
-                                                }
-
-                                                eventsList.Add(scrapedEvent.ToDto());
-                                            }
-                                        }
-                                    }
-                                }
-                                else if (esDoc.RootElement.ValueKind == JsonValueKind.Array)
-                                {
-                                    foreach (var hit in esDoc.RootElement.EnumerateArray())
+                                    if (scrapedEvent != null)
                                     {
-                                        var source = hit.TryGetProperty("_source", out var s) ? s : hit;
-                                        var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(),
-                                            new JsonSerializerOptions
-                                            {
-                                                PropertyNameCaseInsensitive = true
-                                            });
-
-                                        if (scrapedEvent != null)
+                                        // 🌟 ВАЖЛИВИЙ ФІКС: якщо Id порожній, беремо його з метаданих _id
+                                        if (string.IsNullOrEmpty(scrapedEvent.Id) && hit.TryGetProperty("_id", out var idProp))
                                         {
-                                            if (string.IsNullOrEmpty(scrapedEvent.Id) &&
-                                                hit.TryGetProperty("_id", out var idProp))
-                                            {
-                                                scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
-                                            }
-
-                                            eventsList.Add(scrapedEvent.ToDto());
+                                            scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
                                         }
+                                        eventsList.Add(scrapedEvent.ToDto());
                                     }
                                 }
                             }
-                            catch (Exception ex)
+                        }
+                        // Варіант 2: Якщо MCP повернув прямий масив об'єктів
+                        else if (esDoc.RootElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var hit in esDoc.RootElement.EnumerateArray())
                             {
-                                Console.WriteLine($"Помилка парсингу результатів MCP: {ex.Message}");
+                                var source = hit.TryGetProperty("_source", out var s) ? s : hit;
+                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), new JsonSerializerOptions
+                                {
+                                    PropertyNameCaseInsensitive = true
+                                });
+
+                                if (scrapedEvent != null)
+                                {
+                                    if (string.IsNullOrEmpty(scrapedEvent.Id) && hit.TryGetProperty("_id", out var idProp))
+                                    {
+                                        scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
+                                    }
+                                    eventsList.Add(scrapedEvent.ToDto());
+                                }
                             }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Помилка парсингу результатів MCP: {ex.Message}");
+                    }
                 }
-
-                var uniqueEvents = eventsList.GroupBy(e => e.Id).Select(g => g.First()).ToList();
-
-                return Ok(new
-                {
-                    AgentMessage = agentMessage,
-                    Events = uniqueEvents
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
             }
         }
+
+        // 🌟 ВАЖЛИВИЙ ФІКС: Видаляємо можливі дублікати перед відправкою на фронтенд
+        var uniqueEvents = eventsList.GroupBy(e => e.Id).Select(g => g.First()).ToList();
+
+        return Ok(new 
+        { 
+            AgentMessage = agentMessage, 
+            Events = uniqueEvents 
+        });
+    }
+    catch (Exception ex)
+    {
+        return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
+    }
+}
 
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
@@ -181,14 +177,15 @@ namespace EventAggregator.Api.Controllers
             int from = (page - 1) * pageSize;
             var now = DateTime.UtcNow;
 
+            // ✅ ВИПРАВЛЕННЯ: збираємо всі фільтри в один список і передаємо разом,
+            // бо кожен окремий виклик b.Filter(...) перезаписує попередній.
             var filters = new List<Action<QueryDescriptor<ScrapedEvent>>>
             {
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // 🌟 ВИПРАВЛЕНО: Змінено "city.keyword" на "city", оскільки це чистий Keyword-тип
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToUpper())));
+                filters.Add(f => f.Term(t => t.Field("city.keyword").Value(city.ToUpper())));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
                 filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
@@ -201,11 +198,7 @@ namespace EventAggregator.Api.Controllers
             );
 
             return response.IsValidResponse
-                ? Ok(new
-                {
-                    Total = response.Total, Page = page, PageSize = pageSize,
-                    Data = response.Documents.Select(d => d.ToDto())
-                })
+                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) })
                 : StatusCode(500, response.DebugInformation);
         }
 
@@ -224,8 +217,7 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetMetadata()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                // 🌟 ВИПРАВЛЕНО: агрегація йде прямо по полю "city"
-                .Add("unique_cities", ag => ag.Terms(t => t.Field("city").Size(100)))
+                .Add("unique_cities", ag => ag.Terms(t => t.Field("city.keyword").Size(100)))
                 .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
             ));
 
@@ -233,10 +225,8 @@ namespace EventAggregator.Api.Controllers
 
             return Ok(new EventMetadataDto
             {
-                Cities = response.Aggregations.GetStringTerms("unique_cities")?.Buckets.Select(b => b.Key.ToString())
-                    .OrderBy(c => c).ToList() ?? new(),
-                Categories = response.Aggregations.GetStringTerms("unique_categories")?.Buckets
-                    .Select(b => b.Key.ToString()).OrderBy(c => c).ToList() ?? new()
+                Cities = response.Aggregations.GetStringTerms("unique_cities")?.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList() ?? new(),
+                Categories = response.Aggregations.GetStringTerms("unique_categories")?.Buckets.Select(b => b.Key.ToString()).OrderBy(c => c).ToList() ?? new()
             });
         }
 
@@ -244,8 +234,7 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetStats()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                // 🌟 ВИПРАВЛЕНО: аналогічно, рахуємо статистику по чистому "city"
-                .Add("events_by_city", ag => ag.Terms(t => t.Field("city").Size(10)))
+                .Add("events_by_city", ag => ag.Terms(t => t.Field("city.keyword").Size(10)))
                 .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
             ));
 
@@ -253,10 +242,8 @@ namespace EventAggregator.Api.Controllers
 
             return Ok(new
             {
-                ByCity = response.Aggregations.GetStringTerms("events_by_city")?.Buckets
-                    .ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new(),
-                ByCategory = response.Aggregations.GetStringTerms("events_by_category")?.Buckets
-                    .ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new()
+                ByCity = response.Aggregations.GetStringTerms("events_by_city")?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new(),
+                ByCategory = response.Aggregations.GetStringTerms("events_by_category")?.Buckets.ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new()
             });
         }
 
@@ -265,8 +252,7 @@ namespace EventAggregator.Api.Controllers
         {
             var request = new UpdateRequest<ScrapedEvent, ScrapedEvent>("events", id)
             {
-                Script = new Script(new InlineScript(
-                    "if (ctx._source.viewsCount == null) { ctx._source.viewsCount = 1 } else { ctx._source.viewsCount += 1 }"))
+                Script = new Script(new InlineScript("if (ctx._source.viewsCount == null) { ctx._source.viewsCount = 1 } else { ctx._source.viewsCount += 1 }"))
             };
             var response = await _client.UpdateAsync(request);
             return response.IsValidResponse ? Ok() : StatusCode(500, response.DebugInformation);
@@ -288,11 +274,7 @@ namespace EventAggregator.Api.Controllers
             );
 
             return response.IsValidResponse
-                ? Ok(new
-                {
-                    Total = response.Total, Page = page, PageSize = pageSize,
-                    Data = response.Documents.Select(d => d.ToDto())
-                })
+                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) })
                 : StatusCode(500, response.DebugInformation);
         }
     }
