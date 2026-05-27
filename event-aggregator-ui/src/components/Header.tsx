@@ -72,7 +72,7 @@ export default function Header({
                 ref={menuRef}
                 className="sticky top-0 z-40 bg-[#e8e8f2]/80 backdrop-blur-2xl border-b border-[#d2d2e1]/70"
             >
-                <div className="px-4 h-14 flex items-center justify-between gap-3 max-w-screen-xl mx-auto">
+                <div className="px-6 h-14 flex items-center justify-between gap-3 w-full">
 
                     {/* Logo */}
                     <Link
