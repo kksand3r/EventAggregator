@@ -29,16 +29,22 @@ public class ElasticEventRepository : IEventRepository
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
+                    .Text(t => t.Title)
+                    .Text(t => t.Description)
+                    .Text(t => t.Date)
+                    .Date(t => t.ParsedDate)
+                    .Keyword(k => k.City)
+                    .Keyword(k => k.Source)
+                    .Keyword(k => k.Url)
+                    .Keyword(k => k.ImageUrl)
+                    .IntegerNumber(k => k.ViewsCount)
                     .Text(t => t.Category, g => g
                         .Analyzer("ukrainian")
                         .Fields(f => f
-                            .Keyword("keyword") 
+                            .Keyword("keyword")
                         )
                     )
-                    .Keyword(k => k.City)
                     .Text(t => t.CityUk, t => t.Analyzer("ukrainian"))
-                    .Text(t => t.Title)
-                    .Text(t => t.Description)
                 )
             ), ct);
     }
