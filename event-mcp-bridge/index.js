@@ -125,18 +125,10 @@ app.post('/api/mcp-search', async (req, res) => {
 
 СУВОРІ ПРАВИЛА ДЛЯ ФОРМУВАННЯ ЗАПИТУ В ELASTICSEARCH:
 1. Для пошуку використовуй простий повнотекстовий запит (match або multi_match). 
-2. Тобі НЕ потрібно перекладати назви міст чи категорій на англійську мову або змінювати їхні форми. Передавай слова українською мовою ПРЯМО ТАК, як їх написав користувач.
+2. Тобі НЕ потрібно перекладати назви міст чи категорій на англійську мову. Передавай слова українською мовою.
 3. Шукай місто за полем "cityUk", а категорію або суть заходу — за полями "category", "title" та "description".
-   Наприклад, якщо запит "вистави у Львові", ти будуєш запит, який шукає "Львові" у полі "cityUk" та "вистави" у полі "category".
-4. Завдяки українському аналізатору в Elasticsearch, база даних сама зрозуміє відмінки (Львів/Львові) та форми слів (вистава/вистави/театр).
-5. Зроби виклик інструменту пошуку лише ОДИН РАЗ за сесію. Обмежуй параметр 'size' до 20.
-6. Обов'язково додавай сортування за полем "parsedDate" у порядку зростання ("asc").
-7. Якщо подій не знайдено, одразу відповідай, що нічого не знайдено.
-8. Виведи у фінальній відповіді ВСІ знайдені події списком.
-
-ПРАВИЛО ФОРМУВАННЯ ФІНАЛЬНОЇ ВІДПОВІДІ:
-Оформлюй кожну знайдену подію як Markdown-посилання на внутрішню сторінку нашого сайту.
-Формат посилання: [Назва події - Дата проведення](/events/ІДЕНТИФІКАТОР). Ідентифікатор бери строго з поля "_id".
+4. Сортуй результати за "parsedDate" у порядку "asc".
+5. Виведи у фінальній відповіді ВСІ знайдені події списком у форматі Markdown: [Назва - Дата](/events/ID).
         ` }]
             }
         ];
@@ -163,28 +155,21 @@ app.post('/api/mcp-search', async (req, res) => {
             let jsonResponse = await response.json();
 
             if (jsonResponse.error) {
-                console.error("❌ Gemini API Error:", jsonResponse.error);
-                return res.json({
-                    agentMessage: `Виникла помилка ШІ: ${jsonResponse.error.message}`,
-                    rawMcpData: lastMcpData
-                });
+                return res.json({ agentMessage: `Помилка ШІ: ${jsonResponse.error.message}`, rawMcpData: [] });
             }
 
-            console.log(`[Gemini Response - Turn ${loopCount}]:`, JSON.stringify(jsonResponse, null, 2));
             let candidate = jsonResponse.candidates?.[0];
             let part = candidate?.content?.parts?.[0];
 
-            if (candidate?.content) {
-                conversationHistory.push(candidate.content);
-            }
+            if (candidate?.content) conversationHistory.push(candidate.content);
 
             if (part?.functionCall) {
                 const { name, args } = part.functionCall;
-                console.log(`[Executing Tool via Proxy]: ${name} with args:`, args);
-
                 try {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
-                    lastMcpData = toolResult.content;
+
+                    // ВИПРАВЛЕННЯ: Обгортаємо результат у формат, який очікує EventsController
+                    lastMcpData = [{ text: JSON.stringify({ hits: { hits: toolResult.content } }) }];
 
                     conversationHistory.push({
                         role: "user",
@@ -196,18 +181,11 @@ app.post('/api/mcp-search', async (req, res) => {
                         }]
                     });
                 } catch (toolError) {
-                    console.error(`❌ [Tool Execution Error]: ${toolError.message}`);
                     conversationHistory.push({
                         role: "user",
-                        parts: [{
-                            functionResponse: {
-                                name: name,
-                                response: { error: toolError.message }
-                            }
-                        }]
+                        parts: [{ functionResponse: { name: name, response: { error: toolError.message } } }]
                     });
                 }
-
                 continue;
             }
 
@@ -217,17 +195,15 @@ app.post('/api/mcp-search', async (req, res) => {
                     rawMcpData: lastMcpData
                 });
             }
-
             break;
         }
 
         return res.json({
-            agentMessage: "Я перевірив базу даних подій. Будь ласка, ознайомтеся зі знайденими результатами нижче.",
+            agentMessage: "Я перевірив базу даних подій. Ознайомтеся з результатами нижче.",
             rawMcpData: lastMcpData
         });
 
     } catch (error) {
-        console.error("[Bridge Error] Message:", error.message);
         res.status(500).json({ error: error.message });
     }
 });
