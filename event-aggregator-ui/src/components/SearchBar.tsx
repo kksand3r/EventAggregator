@@ -13,7 +13,6 @@ interface SearchBarProps {
     placeholder?: string;
 }
 
-// Оновлений дизайн для тексту та карток від AI
 function RenderAiDropdownMessage({ text, onLinkClick }: { text: string, onLinkClick: () => void }) {
     if (!text) return null;
 
@@ -106,15 +105,16 @@ export default function SearchBar({
         setLocalValue(externalValue);
     }, [externalValue]);
 
+    // ВИПРАВЛЕНО: Примусово чистимо інпут і ховаємо дропдаун при перемиканні режимів (AI <=> Classic)
     const handleToggleMode = (mode: 'ai' | 'classic') => {
         setSearchMode(mode);
         onModeChange?.(mode);
-        if (mode === 'classic') {
-            externalOnChange(localValue);
-        } else {
-            setAiResponse({ agentMessage: "", events: [] });
-            setShowDropdown(false);
-        }
+
+        // Повністю скидаємо текст пошуку при зміні режиму
+        setLocalValue("");
+        externalOnChange("");
+        setAiResponse({ agentMessage: "", events: [] });
+        setShowDropdown(false);
     };
 
     const handleInputChange = (val: string) => {
@@ -184,6 +184,7 @@ export default function SearchBar({
                     )}
                 </div>
 
+                {/* ОНОВЛЕНО: pr-[145px] робить безпечний відступ, а text-ellipsis обрізає довгий текст завчасно */}
                 <input
                     type="search"
                     value={localValue}
@@ -196,7 +197,7 @@ export default function SearchBar({
                             ? "Запитайте ШІ (наприклад: куди піти з дівчиною?)..."
                             : "Пошук подій за назвою"
                     }
-                    className="w-full h-[52px] pl-[46px] pr-[110px] rounded-[26px] border border-white/90 bg-white/70 backdrop-blur-[20px] text-[15px] font-medium text-[#1a1535] outline-none transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.04)] focus:shadow-[0_8px_24px_rgba(124,77,255,0.12)] focus:border-[#7c4dff]/30 focus:bg-white appearance-none placeholder:text-slate-400 [&::-webkit-search-decoration]:hidden [&::-webkit-search-cancel-button]:hidden"
+                    className="w-full h-[52px] pl-[46px] pr-[145px] rounded-[26px] border border-white/90 bg-white/70 backdrop-blur-[20px] text-[15px] font-medium text-[#1a1535] outline-none transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.04)] focus:shadow-[0_8px_24px_rgba(124,77,255,0.12)] focus:border-[#7c4dff]/30 focus:bg-white appearance-none placeholder:text-slate-400 text-ellipsis overflow-hidden whitespace-nowrap [&::-webkit-search-decoration]:hidden [&::-webkit-search-cancel-button]:hidden"
                 />
 
                 <div className="absolute right-2 flex items-center gap-1 bg-slate-100/50 p-1 rounded-full z-20 backdrop-blur-sm">
