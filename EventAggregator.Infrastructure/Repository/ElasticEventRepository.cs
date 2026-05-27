@@ -27,16 +27,17 @@ public class ElasticEventRepository : IEventRepository
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
-                    .Title(t => t.Title, g => g.Analyzer("ukrainian")) // 🌟 Український аналізатор для назви
-                    .Description(d => d.Description, g => g.Analyzer("ukrainian")) // 🌟 Український аналізатор для опису
-                    .Category(t => t.Category, g => g
+                    // 🌟 Для всіх текстових полів використовуємо .Text()
+                    .Text(t => t.Title, g => g.Analyzer("ukrainian")) 
+                    .Text(t => t.Description, g => g.Analyzer("ukrainian")) 
+                    .Text(t => t.Category, g => g
                         .Analyzer("ukrainian")
                         .Fields(f => f
                             .Keyword("keyword")
                         )
                     )
                     .Keyword(k => k.City)
-                    .CityUk(t => t.CityUk, g => g.Analyzer("ukrainian"))
+                    .Text(t => t.CityUk, g => g.Analyzer("ukrainian"))
                 )
             ), ct);
     }
