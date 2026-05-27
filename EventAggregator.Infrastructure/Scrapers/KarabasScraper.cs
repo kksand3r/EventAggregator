@@ -15,7 +15,7 @@ public class KarabasScraper : IEventScraper
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
     
-    private readonly SemaphoreSlim _semaphore = new(2); 
+    private readonly SemaphoreSlim _semaphore = new(1); 
 
     private readonly string[] _citySlugs =
     {
@@ -128,7 +128,7 @@ public class KarabasScraper : IEventScraper
                                 {
                                     hasMorePages = true;
                                     page++;
-                                    await Task.Delay(Random.Shared.Next(800, 1500)); 
+                                    await Task.Delay(Random.Shared.Next(3000, 6000)); 
                                 }
                             }
                         }
