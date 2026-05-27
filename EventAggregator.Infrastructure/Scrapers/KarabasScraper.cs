@@ -19,10 +19,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "mykolaiv", "uzhhorod", "kropyvnytskyi" // "lviv", "kharkiv", "ivano-frankivsk",
+        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private readonly string[] _categories =
@@ -167,9 +167,31 @@ public class KarabasScraper : IEventScraper
 
                     await page.GoToAsync(item.Url, new NavigationOptions 
                     { 
-                        WaitUntil = new[] { WaitUntilNavigation.Load }, 
+                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 },
                         Timeout = 60000 
                     });
+
+                    // Перевірка чи Cloudflare не заблокував
+                    var pageTitle = await page.GetTitleAsync();
+                    _logger.LogInformation("📄 Page title: {Title} for {Url}", pageTitle, item.Url);
+
+                    if (pageTitle.Contains("Just a moment") || pageTitle.Contains("Attention Required"))
+                    {
+                        _logger.LogWarning("🔒 Cloudflare заблокував {Url}", item.Url);
+                        break;
+                    }
+
+                    try
+                    {
+                        await page.WaitForSelectorAsync(
+                            ".date-time-location, .date-time, .event-date",
+                            new WaitForSelectorOptions { Timeout = 10000 }
+                        );
+                    }
+                    catch
+                    {
+                        _logger.LogWarning("⚠️ Селектор дати не знайдено для {Url}", item.Url);
+                    }
 
                     var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
                         const clean = (str) => {
@@ -223,6 +245,7 @@ public class KarabasScraper : IEventScraper
                     }");
 
                     string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
+                    _logger.LogInformation("📅 Дата для {Title}: '{Date}'", item.Title, rawDate);
                     
                     var newEvent = new ScrapedEvent
                     {
