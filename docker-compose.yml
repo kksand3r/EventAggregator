@@ -1,6 +1,4 @@
-﻿version: '3.8'
-
-services:
+﻿services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
     container_name: event_aggregator_elasticsearch
@@ -21,6 +19,12 @@ services:
     networks:
       - event_network
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'You Know, for Search'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   event-mcp-bridge:
     build:
@@ -36,7 +40,8 @@ services:
     ports:
       - "5001:5001"
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     networks:
       - event_network
     restart: unless-stopped
@@ -54,8 +59,10 @@ services:
       - Gemini__ApiKey=${GEMINI_API_KEY}
       - McpBridgeUrl=http://event-mcp-bridge:5001
     depends_on:
-      - elasticsearch
-      - event-mcp-bridge
+      elasticsearch:
+        condition: service_healthy
+      event-mcp-bridge:
+        condition: service_started
     networks:
       - event_network
     restart: unless-stopped
@@ -68,9 +75,11 @@ services:
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
       - Gemini__ApiKey=${GEMINI_API_KEY:-""}
-      - ProxyServer=${PROXY_SERVER:-""}
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
+      api:
+        condition: service_started
     networks:
       - event_network
 

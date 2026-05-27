@@ -60,7 +60,7 @@ public class KarabasScraper : IEventScraper
 
         using (var httpClient = new HttpClient(handler))
         {
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/122.0.0.0 Safari/537.36");
             httpClient.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/javascript, */*; q=0.01");
             long timeStamp = new DateTimeOffset(DateTime.UtcNow.Date).ToUnixTimeSeconds();
@@ -68,7 +68,9 @@ public class KarabasScraper : IEventScraper
             foreach (var city in _citySlugs)
             {
                 string cityLower = city.ToLowerInvariant();
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", cityLower.ToUpper());
+                // Робимо формат з великої літери для Elasticsearch (напр. "Uzhhorod")
+                string formattedCity = cityLower.Substring(0, 1).ToUpper() + cityLower.Substring(1);
+                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", formattedCity);
 
                 foreach (var category in _categories)
                 {
@@ -168,9 +170,9 @@ public class KarabasScraper : IEventScraper
                                                             Description = description,
                                                             Date = displayDate, 
                                                             ParsedDate = finalParsedDate,
-                                                            // Зберігаємо виключно стабільний нижній регістр слага міст (напр. "uzhhorod")
-                                                            City = cityLower, 
-                                                            CityUk = CityTranslations.GetValueOrDefault(cityLower, cityLower),
+                                                            // ЗБЕРІГАЄМО З ВЕЛИКОЇ ЛІТЕРИ
+                                                            City = formattedCity, 
+                                                            CityUk = CityTranslations.GetValueOrDefault(cityLower, formattedCity),
                                                             Category = category,
                                                             ImageUrl = imageUrl.Trim(),
                                                             ViewsCount = Random.Shared.Next(110, 340)
@@ -179,7 +181,7 @@ public class KarabasScraper : IEventScraper
                                                         newEvent.GenerateDeterministicId();
                                                         allEvents.Add(newEvent);
                                                         parsedOnPageCount++;
-                                                        _logger.LogInformation("✅ Karabas (JSON-LD): {Title} [{City}]", newEvent.Title, newEvent.City.ToUpper());
+                                                        _logger.LogInformation("✅ Karabas (JSON-LD): {Title} [{City}]", newEvent.Title, newEvent.City);
                                                     }
                                                 }
                                             }

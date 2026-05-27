@@ -19,14 +19,13 @@ public class ConcertUaScraper : IEventScraper
 {
     public string ProviderName => "Concert.ua";
     private readonly ILogger<ConcertUaScraper> _logger;
-    // Семафор на рівні міст — 5 міст паралельно
     private readonly SemaphoreSlim _semaphore = new(5);
 
     private readonly string[] _citySlugs =
     {
         "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        "vinnytsia", "poltava", "zhitomir", "zaporizhzhia", "ternopil",
-        "chernivtsy", "chernigiv", "khmelnitsky", "rivne",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
@@ -45,9 +44,9 @@ public class ConcertUaScraper : IEventScraper
     {
         { "kyiv", "Київ" }, { "odesa", "Одеса" }, { "dnipro", "Дніпро" }, { "lviv", "Львів" },
         { "kharkiv", "Харків" }, { "ivano-frankivsk", "Івано-Франківськ" }, { "vinnytsia", "Вінниця" },
-        { "poltava", "Полтава" }, { "zhitomir", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
-        { "ternopil", "Тернопіль" }, { "chernivtsy", "Чернівці" }, { "chernigiv", "Чернігів" },
-        { "khmelnitsky", "Хмельницький" }, { "rivne", "Рівне" }, { "lutsk", "Луцьк" },
+        { "poltava", "Полтава" }, { "zhytomyr", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
+        { "ternopil", "Тернопіль" }, { "chernivtsi", "Чернівці" }, { "chernihiv", "Чернігів" },
+        { "khmelnytskyi", "Хмельницький" }, { "rivne", "Рівне" }, { "lutsk", "Луцьк" },
         { "mykolaiv", "Миколаїв" }, { "uzhhorod", "Ужгород" }, { "kropyvnytskyi", "Кропивницький" }
     };
 
@@ -86,11 +85,11 @@ public class ConcertUaScraper : IEventScraper
         {
             await _semaphore.WaitAsync();
             string cityLower = citySlug.ToLowerInvariant();
-            _logger.LogInformation("🏙️ Concert.ua: Сканування міста {City}...", cityLower.ToUpper());
+            string formattedCity = cityLower.Substring(0, 1).ToUpper() + cityLower.Substring(1);
+            _logger.LogInformation("🏙️ Concert.ua: Сканування міста {City}...", formattedCity);
 
             try
             {
-                // Всі категорії одного міста — паралельно
                 var categoryTasks = CategoryPaths.Select(async kvp =>
                 {
                     var (categoryKey, categoryPath) = kvp;
@@ -108,7 +107,6 @@ public class ConcertUaScraper : IEventScraper
                         return localEvents;
                     }
 
-                    // 302/404 = немає подій цієї категорії в місті
                     if (!response.IsSuccessStatusCode)
                     {
                         return localEvents;
@@ -151,7 +149,6 @@ public class ConcertUaScraper : IEventScraper
                                 if (string.IsNullOrEmpty(url)) continue;
                                 if (url.StartsWith("/")) url = "https://concert.ua" + url;
 
-                                // Надійний парсинг ISO дат з збереженням таймзони
                                 DateTime finalParsedDate = DateTime.UtcNow.AddDays(2);
                                 string displayDate = startDateRaw;
 
@@ -174,12 +171,12 @@ public class ConcertUaScraper : IEventScraper
                                     Description = description,
                                     Date = displayDate,
                                     ParsedDate = finalParsedDate,
-                                    // Фіксуємо чистий нижній регістр слага для Next.js фільтрів
-                                    City = cityLower,
-                                    CityUk = CityTranslations.GetValueOrDefault(cityLower, cityLower),
+                                    // ЗБЕРІГАЄМО З ВЕЛИКОЇ ЛІТЕРИ
+                                    City = formattedCity,
+                                    CityUk = CityTranslations.GetValueOrDefault(cityLower, formattedCity),
                                     Category = categoryKey,
                                     ImageUrl = imageUrl.Trim(),
-                                    ViewsCount = Random.Shared.Next(90, 280) // Виправлено назву поля згідно з моделлю
+                                    ViewsCount = Random.Shared.Next(90, 280)
                                 };
 
                                 newEvent.GenerateDeterministicId();
@@ -211,11 +208,11 @@ public class ConcertUaScraper : IEventScraper
                 }
 
                 if (cityEventsCount > 0)
-                    _logger.LogInformation("✅ Concert.ua: Отримано {Count} подій для міста {City}", cityEventsCount, cityLower.ToUpper());
+                    _logger.LogInformation("✅ Concert.ua: Отримано {Count} подій для міста {City}", cityEventsCount, formattedCity);
             }
             catch (Exception ex)
             {
-                _logger.LogError("❌ Помилка збору міста {City}: {Message}", cityLower, ex.Message);
+                _logger.LogError("❌ Помилка збору міста {City}: {Message}", formattedCity, ex.Message);
             }
             finally
             {
