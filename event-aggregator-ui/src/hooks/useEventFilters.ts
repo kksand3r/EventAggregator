@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
-// ПОВЕРНЕНО: "archive" знову на місці
 export type Tab = "featured" | "catalog" | "timeline" | "stats" | "archive";
 export type SearchMode = 'ai' | 'classic';
 
@@ -13,21 +12,20 @@ export function useEventFilters() {
     const searchParams = useSearchParams();
     const router = useRouter();
 
+    // 1. Читаємо значення НАПРЯМУ з URL (Single Source of Truth)
     const tabParam = searchParams.get("tab") as Tab | null;
-    const catParam = searchParams.get("category") || "All";
-    const cityParam = searchParams.get("city") || "All";
-    const pageParam = parseInt(searchParams.get("page") || "1");
+    const selectedCategory = searchParams.get("category") || "All";
+    const selectedCity = searchParams.get("city") || "All";
+    const currentPage = parseInt(searchParams.get("page") || "1");
+
+    // Для інпуту пошуку та режиму залишаємо стейт, оскільки користувач вводить текст посимвольно
+    const [search, setSearch] = useState("");
+    const [searchMode, setSearchMode] = useState<SearchMode>('ai');
 
     const [activeTab, setActiveTab] = useState<Tab>(() => {
         if (tabParam && VALID_TABS.includes(tabParam)) return tabParam;
         return "featured";
     });
-
-    const [search, setSearch] = useState("");
-    const [searchMode, setSearchMode] = useState<SearchMode>('ai');
-    const [selectedCategory, setSelectedCategory] = useState(catParam);
-    const [selectedCity, setSelectedCity] = useState(cityParam);
-    const [currentPage, setCurrentPage] = useState(pageParam);
 
     const updateQueryParams = useCallback((updates: Record<string, string | number | null>) => {
         const params = new URLSearchParams(searchParams.toString());
@@ -42,22 +40,22 @@ export function useEventFilters() {
         router.push(query ? `/?${query}` : "/", { scroll: false });
     }, [searchParams, router]);
 
+    // Синхронізуємо лише активну вкладку, якщо вона змінюється ззовні (наприклад, кнопкою "Назад" у браузері)
     useEffect(() => {
-        if (tabParam && VALID_TABS.includes(tabParam)) setActiveTab(tabParam);
-        setSelectedCategory(catParam);
-        setSelectedCity(cityParam);
-        setCurrentPage(pageParam);
-    }, [tabParam, catParam, cityParam, pageParam]);
+        if (tabParam && VALID_TABS.includes(tabParam)) {
+            setActiveTab(tabParam);
+        } else {
+            setActiveTab("featured");
+        }
+    }, [tabParam]);
 
-    // Скидаємо фільтри каталогу та очищуємо інпут при повноцінному переході між вкладками
+    // 2. Очищення при зміні вкладок тепер працює ідеально через оновлення query-параметрів
     const handleTabChange = useCallback((tabId: Tab) => {
         setActiveTab(tabId);
         setSearch("");
         setSearchMode("ai");
-        setSelectedCategory("All");
-        setSelectedCity("All");
-        setCurrentPage(1);
 
+        // Примусово видаляємо всі фільтри з URL для нової вкладки
         if (tabId === "featured") {
             updateQueryParams({ tab: null, category: null, city: null, page: null });
         } else {
@@ -66,28 +64,20 @@ export function useEventFilters() {
     }, [updateQueryParams]);
 
     const handleCategoryChange = useCallback((cat: string) => {
-        setSelectedCategory(cat);
-        setCurrentPage(1);
         updateQueryParams({ category: cat, page: 1 });
     }, [updateQueryParams]);
 
     const handleCityChange = useCallback((city: string) => {
-        setSelectedCity(city);
-        setCurrentPage(1);
         updateQueryParams({ city: city, page: 1 });
     }, [updateQueryParams]);
 
     const handlePageChange = useCallback((page: number) => {
-        setCurrentPage(page);
         updateQueryParams({ page });
     }, [updateQueryParams]);
 
     const resetToHome = useCallback(() => handleTabChange("featured"), [handleTabChange]);
 
     const clearFilters = useCallback(() => {
-        setSelectedCategory("All");
-        setSelectedCity("All");
-        setCurrentPage(1);
         updateQueryParams({ category: null, city: null, page: 1 });
     }, [updateQueryParams]);
 
