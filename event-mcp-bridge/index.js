@@ -171,13 +171,19 @@ app.post('/api/mcp-search', async (req, res) => {
                 try {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
 
-                    // ВИПРАВЛЕННЯ 2: Коректно витягуємо чистий JSON від Elasticsearch
-                    // Elastic MCP Server повертає текст у масиві об'єктів. Беремо саме його.
-                    const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
-                    if (toolTextContent) {
-                        lastMcpData = [{ text: toolTextContent }];
-                    }
+                    // ДОДАЄМО ЛОГУВАННЯ: подивимося, що реально прийшло від MCP
+                    console.log("🔍 MCP Tool Result Content:", JSON.stringify(toolResult.content, null, 2));
 
+                    // Шукаємо текст
+                    const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
+
+                    if (toolTextContent) {
+                        // Якщо це масив/об'єкт, переконаємося що він у JSON форматі
+                        lastMcpData = [{ text: toolTextContent }];
+                        console.log("✅ Data captured into lastMcpData");
+                    } else {
+                        console.warn("⚠️ MCP returned tool result but no text content found!");
+                    }
                     conversationHistory.push({
                         role: "user",
                         parts: [{
