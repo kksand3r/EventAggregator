@@ -121,7 +121,9 @@ function dtoToItem(d: EventDto): EventListItem {
         image: image,
         viewCount: d.viewsCount,
         date: d.date,
-        city: d.city,
+        city: d.city
+            ? d.city.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('-')
+            : d.city,
         category: d.category,
         description: d.description || undefined,
         url: d.url,
