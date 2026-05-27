@@ -64,12 +64,12 @@ public class KarabasScraper : IEventScraper
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
             httpClient.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/javascript, */*; q=0.01");
-            
             long timeStamp = new DateTimeOffset(DateTime.UtcNow.Date).ToUnixTimeSeconds();
 
             foreach (var city in _citySlugs)
             {
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (JSON-LD)", city.ToUpper());
+                string formattedCity = CityNormalizer.Normalize(city);
+                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (JSON-LD)", formattedCity);
 
                 foreach (var category in _categories)
                 {
@@ -80,7 +80,9 @@ public class KarabasScraper : IEventScraper
                     {
                         if (browser.IsClosed) return allEvents;
 
+                        string htmlContent = ""; // ✅ Оголошуємо тут, щоб бачити в кінці циклу
                         string targetUrl = $"https://{city}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
+                        
                         try
                         {
                             var response = await httpClient.GetAsync(targetUrl);
@@ -92,7 +94,7 @@ public class KarabasScraper : IEventScraper
 
                             if (root.TryGetProperty("content", out var contentEl))
                             {
-                                string htmlContent = contentEl.GetString() ?? "";
+                                htmlContent = contentEl.GetString() ?? "";
                                 var jsonLdRegex = new Regex(@"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
                                 var matches = jsonLdRegex.Matches(htmlContent);
 
@@ -129,7 +131,7 @@ public class KarabasScraper : IEventScraper
                                                     Description = desc.Replace("ПОКАЗАТИ ЩЕ", "").Trim(),
                                                     Date = parsedDate.ToString("dd.MM.yyyy HH:mm"),
                                                     ParsedDate = parsedDate,
-                                                    City = CityNormalizer.Normalize(city), // ✅ Твій нормалізатор (Uzhhorod)
+                                                    City = formattedCity,
                                                     CityUk = CityTranslations.GetValueOrDefault(city, city),
                                                     Category = category,
                                                     ImageUrl = img.Trim(),
