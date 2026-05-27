@@ -150,7 +150,6 @@ namespace EventAggregator.Api.Controllers
             }
         }
 
-        // Решта методів без змін
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
         {
@@ -198,8 +197,9 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
+            // ОНОВЛЕНО: Додано ToLowerInvariant() для точного збігу з keyword-полем в Elasticsearch
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city").Value(city)));
+                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToLowerInvariant())));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
                 filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLowerInvariant())));
