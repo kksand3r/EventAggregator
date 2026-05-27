@@ -1,27 +1,28 @@
 ﻿"use client";
 
-import {useEffect, useState} from "react";
-import {Loader2, X, MapPin, Tag, Filter} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, X, MapPin, Tag, Filter } from "lucide-react";
 import EventCard from "@/components/EventCard";
 import Pagination from "@/components/Pagination";
 import EmptyState from "@/components/EmptyState";
-import {useEventFilters} from "@/hooks/useEventFilters";
-import {useMetadata} from "@/hooks/useMetadata";
-import {fetchEvents, type EventListItem} from "@/lib/api";
-import {formatCategory, getApiCategory} from "@/lib/categoryMapping";
+import { useEventFilters } from "@/hooks/useEventFilters";
+import { useMetadata } from "@/hooks/useMetadata";
+import { fetchEvents, type EventListItem } from "@/lib/api";
+import { formatCategory, getApiCategory } from "@/lib/categoryMapping";
 
 interface CatalogTabProps {
     onTotalCountChange?: (total: number) => void;
 }
 
+// Універсальний форматувальник: робить "uzhhorod" -> "Uzhhorod"
 function formatCityName(city: string): string {
-    if (city === "All") return "All Cities";
-    return city.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join("-");
+    if (!city || city === "All") return "All Cities";
+    return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
 }
 
-export default function CatalogTab({onTotalCountChange}: CatalogTabProps) {
+export default function CatalogTab({ onTotalCountChange }: CatalogTabProps) {
     const filters = useEventFilters();
-    const {metadata} = useMetadata();
+    const { metadata } = useMetadata();
 
     const [events, setEvents] = useState<EventListItem[]>([]);
     const [loading, setLoading] = useState(false);
@@ -36,7 +37,10 @@ export default function CatalogTab({onTotalCountChange}: CatalogTabProps) {
         setEvents([]);
 
         const apiCategory = filters.selectedCategory !== "All" ? getApiCategory(filters.selectedCategory) : undefined;
+        // Передаємо місто як є, бо бекенд тепер обробляє його коректно
         const apiCity = filters.selectedCity !== "All" ? filters.selectedCity : undefined;
+
+        console.log("Fetching events for city:", apiCity);
 
         fetchEvents({
             city: apiCity,
@@ -51,7 +55,8 @@ export default function CatalogTab({onTotalCountChange}: CatalogTabProps) {
                     if (onTotalCountChange) onTotalCountChange(result.total);
                 }
             })
-            .catch(() => {
+            .catch((err) => {
+                console.error("Fetch error:", err);
                 if (!cancelled) {
                     setEvents([]);
                     setTotalEvents(0);
@@ -69,9 +74,7 @@ export default function CatalogTab({onTotalCountChange}: CatalogTabProps) {
 
     return (
         <div className="space-y-6">
-            {/* Блок фільтрів в стилі TimelineTab */}
-            <div
-                className="flex flex-wrap items-center gap-3 p-3 card-glass rounded-2xl border-white/60 shadow-sm mb-8">
+            <div className="flex flex-wrap items-center gap-3 p-3 card-glass rounded-2xl border-white/60 shadow-sm mb-8">
                 <div className="flex items-center gap-2 text-violet-700 px-1">
                     <Filter className="h-4 w-4"/>
                     <span className="text-xs font-black uppercase tracking-wider">Filter:</span>
@@ -87,7 +90,9 @@ export default function CatalogTab({onTotalCountChange}: CatalogTabProps) {
                     >
                         <option value="All">All Cities</option>
                         {metadata?.cities.map(city => (
-                            <option key={city} value={city}>{formatCityName(city)}</option>
+                            <option key={city} value={city}>
+                                {formatCityName(city)}
+                            </option>
                         ))}
                     </select>
                 </div>
@@ -107,7 +112,6 @@ export default function CatalogTab({onTotalCountChange}: CatalogTabProps) {
                     </select>
                 </div>
 
-                {/* Кнопка Скинути (тільки при активних фільтрах) */}
                 {(filters.selectedCity !== "All" || filters.selectedCategory !== "All") && (
                     <button
                         onClick={filters.clearFilters}
@@ -120,7 +124,6 @@ export default function CatalogTab({onTotalCountChange}: CatalogTabProps) {
                 {loading && <Loader2 className="h-5 w-5 animate-spin text-violet-500 ml-auto"/>}
             </div>
 
-            {/* Блок контенту */}
             {loading ? (
                 <div className="flex justify-center py-14">
                     <Loader2 className="h-7 w-7 animate-spin text-[#7c4dff]"/>

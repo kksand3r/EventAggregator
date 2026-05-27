@@ -23,10 +23,10 @@ public class ConcertUaScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        "vinnytsia", "poltava", "zhitomir", "zaporizhzhia", "ternopil",
-        "chernivtsy", "chernigiv", "khmelnitsky", "rivne",
-        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "uzhhorod" //"odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private static readonly Dictionary<string, string> CategoryPaths = new()
