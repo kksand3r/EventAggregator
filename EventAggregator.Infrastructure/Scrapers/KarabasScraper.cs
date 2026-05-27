@@ -67,9 +67,8 @@ public class KarabasScraper : IEventScraper
 
             foreach (var city in _citySlugs)
             {
-                // Приводимо місто до формату "Uzhhorod" / "Rivne" для коректної фільтрації на фронтенді
-                string formattedCity = city.Substring(0, 1).ToUpper() + city.Substring(1).ToLower();
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", formattedCity);
+                string cityLower = city.ToLowerInvariant();
+                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", cityLower.ToUpper());
 
                 foreach (var category in _categories)
                 {
@@ -80,7 +79,7 @@ public class KarabasScraper : IEventScraper
                     {
                         if (browser.IsClosed) return allEvents;
 
-                        string targetUrl = $"https://{city}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
+                        string targetUrl = $"https://{cityLower}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
                         try
                         {
                             var response = await httpClient.GetAsync(targetUrl);
@@ -143,7 +142,6 @@ public class KarabasScraper : IEventScraper
                                                     description = Regex.Replace(description, @"\s+", " ").Trim();
                                                 }
 
-                                                // Парсимо ISO 8601 дату з збереженням часового поясу
                                                 DateTime finalParsedDate = DateTime.UtcNow.AddDays(2); 
                                                 string displayDate = startDateStr;
 
@@ -170,18 +168,18 @@ public class KarabasScraper : IEventScraper
                                                             Description = description,
                                                             Date = displayDate, 
                                                             ParsedDate = finalParsedDate,
-                                                            City = formattedCity, 
-                                                            CityUk = CityTranslations.GetValueOrDefault(city.ToLower(), formattedCity),
+                                                            // Зберігаємо виключно стабільний нижній регістр слага міст (напр. "uzhhorod")
+                                                            City = cityLower, 
+                                                            CityUk = CityTranslations.GetValueOrDefault(cityLower, cityLower),
                                                             Category = category,
                                                             ImageUrl = imageUrl.Trim(),
-                                                            // Виправлено назву поля на ViewsCount (відповідно до моделі)
                                                             ViewsCount = Random.Shared.Next(110, 340)
                                                         };
 
                                                         newEvent.GenerateDeterministicId();
                                                         allEvents.Add(newEvent);
                                                         parsedOnPageCount++;
-                                                        _logger.LogInformation("✅ Karabas (JSON-LD): {Title} [{City}]", newEvent.Title, newEvent.City);
+                                                        _logger.LogInformation("✅ Karabas (JSON-LD): {Title} [{City}]", newEvent.Title, newEvent.City.ToUpper());
                                                     }
                                                 }
                                             }

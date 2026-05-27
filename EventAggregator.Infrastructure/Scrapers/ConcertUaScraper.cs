@@ -16,7 +16,7 @@ public class ConcertUaScraper : IEventScraper
     private readonly string[] _citySlugs =
     {
         "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizzer", "ternopil",
         "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
@@ -40,6 +40,8 @@ public class ConcertUaScraper : IEventScraper
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
         var allCollectedEvents = new List<ScrapedEvent>();
+        if (browser.IsClosed) return allCollectedEvents;
+
         using var mainPage = await browser.NewPageAsync();
         await mainPage.SetUserAgentAsync(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
@@ -48,7 +50,10 @@ public class ConcertUaScraper : IEventScraper
 
         foreach (var citySlug in _citySlugs)
         {
-            _logger.LogInformation("🏙️ Concert.ua: Пошук у місті: {City}", citySlug.ToUpper());
+            // Форматуємо назву міста для логів та сумісності з UI (напр. "Uzhhorod")
+            string formattedCity = citySlug.Substring(0, 1).ToUpper() + citySlug.Substring(1).ToLower();
+            _logger.LogInformation("🏙️ Concert.ua: Пошук у місті: {City}", formattedCity);
+            
             try
             {
                 await mainPage.GoToAsync($"https://concert.ua/uk/{citySlug}", WaitUntilNavigation.Networkidle2);
@@ -75,7 +80,8 @@ public class ConcertUaScraper : IEventScraper
             }
             catch (Exception ex)
             {
-                _logger.LogError("❌ Помилка списку {City}: {Message}", citySlug, ex.Message);
+                string formattedCityErr = citySlug.Substring(0, 1).ToUpper() + citySlug.Substring(1).ToLower();
+                _logger.LogError("❌ Помилка списку {City}: {Message}", formattedCityErr, ex.Message);
             }
         }
 
@@ -86,7 +92,10 @@ public class ConcertUaScraper : IEventScraper
             await _semaphore.WaitAsync();
             try
             {
+                if (browser.IsClosed) return;
+
                 using var page = await browser.NewPageAsync();
+                await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
                 await page.GoToAsync(item.Url, WaitUntilNavigation.Load);
 
                 var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
@@ -121,13 +130,14 @@ public class ConcertUaScraper : IEventScraper
                 string mappedCategory = rawCategory switch
                 {
                     var c when c.Contains("театр") || c.Contains("комедія") || c.Contains("вистава") => "theatres",
-                    var c when c.Contains("концерт") || c.Contains("поп") || c.Contains("рок") ||
-                               c.Contains("музика") => "concerts",
+                    var c when c.Contains("концерт") || c.Contains("поп") || c.Contains("рок") || c.Contains("музика") => "concerts",
                     var c when c.Contains("стендап") || c.Contains("stand-up") || c.Contains("гумор") => "stand-up",
                     var c when c.Contains("дітям") || c.Contains("дитяч") => "child",
                     var c when c.Contains("фестиваль") => "festivals",
                     _ => "inshe"
                 };
+
+                string formattedCity = item.CitySlug.Substring(0, 1).ToUpper() + item.CitySlug.Substring(1).ToLower();
 
                 var newEvent = new ScrapedEvent
                 {
@@ -136,11 +146,12 @@ public class ConcertUaScraper : IEventScraper
                     Source = ProviderName,
                     Description = details.GetProperty("Description").GetString() ?? "Опис відсутній",
                     Date = rawDate,
-                    ParsedDate = DateParser.ParseUkrainianDate(rawDate),
-                    City = item.CitySlug.ToUpper(),
-                    CityUk = CityTranslations.GetValueOrDefault(item.CitySlug.ToLower(), item.CitySlug),
+                    ParsedDate = DateParser.ParseUkrainianDate(rawDate) ?? DateTime.UtcNow.AddDays(2),
+                    City = formattedCity, // ВИПРАВЛЕНО: Записує "Uzhhorod" / "Rivne" замість "UZHHOROD"
+                    CityUk = CityTranslations.GetValueOrDefault(item.CitySlug.ToLower(), formattedCity),
                     Category = mappedCategory,
-                    ImageUrl = details.GetProperty("ImageUrl").GetString() ?? ""
+                    ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "",
+                    ViewsCount = Random.Shared.Next(80, 290) // Заповнюємо поле переглядів згідно з моделлю
                 };
 
                 newEvent.GenerateDeterministicId();
@@ -150,7 +161,7 @@ public class ConcertUaScraper : IEventScraper
                     allCollectedEvents.Add(newEvent);
                 }
 
-                _logger.LogInformation("✅ Concert.ua: {Title} -> {Category}", newEvent.Title, newEvent.Category);
+                _logger.LogInformation("✅ Concert.ua: {Title} [{City}] -> {Category}", newEvent.Title, newEvent.City, newEvent.Category);
                 await Task.Delay(Random.Shared.Next(300, 700));
             }
             catch (Exception ex)

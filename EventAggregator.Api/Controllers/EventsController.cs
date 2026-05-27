@@ -186,11 +186,12 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
+            // ВИПРАВЛЕНО: Приводимо місто до нижнього регістру, щоб воно збігалося зі слагами в базі
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city.keyword").Value(city.ToUpper())));
+                filters.Add(f => f.Term(t => t.Field("city.keyword").Value(city.ToLowerInvariant())));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
-                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
+                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLowerInvariant())));
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .From(from)
