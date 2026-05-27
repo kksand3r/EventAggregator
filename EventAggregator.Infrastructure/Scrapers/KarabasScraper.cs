@@ -48,6 +48,7 @@ public class KarabasScraper : IEventScraper
 
         var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
         
+        // --- Логіка налаштування проксі ---
         string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
         var handler = new HttpClientHandler();
         
@@ -64,6 +65,7 @@ public class KarabasScraper : IEventScraper
             handler.UseProxy = true;
             handler.PreAuthenticate = true;
         }
+        // ----------------------------------
 
         using (var httpClient = new HttpClient(handler))
         {
@@ -252,7 +254,6 @@ public class KarabasScraper : IEventScraper
                     _logger.LogInformation("✅ Karabas: {Title} [{City}]", newEvent.Title, newEvent.City);
                     
                     break; 
-                    
                 }
                 catch (PuppeteerException ex) when (ex.Message.Contains("Timeout") || ex.Message.Contains("exceeded"))
                 {
