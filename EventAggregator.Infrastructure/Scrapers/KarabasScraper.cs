@@ -14,8 +14,6 @@ public class KarabasScraper : IEventScraper
 {
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
-    
-    private readonly SemaphoreSlim _semaphore = new(2); 
 
     private readonly string[] _citySlugs =
     {
@@ -44,13 +42,9 @@ public class KarabasScraper : IEventScraper
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
         var allEvents = new List<ScrapedEvent>();
-        if (browser.IsClosed) return allEvents;
-
-        var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
-        
         string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
         var handler = new HttpClientHandler();
-        
+
         if (!string.IsNullOrEmpty(proxyServer))
         {
             var proxyUri = new Uri(proxyServer);
@@ -75,7 +69,7 @@ public class KarabasScraper : IEventScraper
 
             foreach (var city in _citySlugs)
             {
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API)", city.ToUpper());
+                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (JSON-LD)", city.ToUpper());
 
                 foreach (var category in _categories)
                 {
@@ -84,19 +78,13 @@ public class KarabasScraper : IEventScraper
 
                     while (hasMorePages)
                     {
-                        if (browser.IsClosed) return allEvents; 
+                        if (browser.IsClosed) return allEvents;
 
                         string targetUrl = $"https://{city}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
-                        
                         try
                         {
                             var response = await httpClient.GetAsync(targetUrl);
-                            
-                            if (!response.IsSuccessStatusCode)
-                            {
-                                _logger.LogWarning("⚠️ Помилка API {Code} для {Url}", response.StatusCode, targetUrl);
-                                break;
-                            }
+                            if (!response.IsSuccessStatusCode) break;
 
                             string jsonString = await response.Content.ReadAsStringAsync();
                             using var doc = JsonDocument.Parse(jsonString);
@@ -105,40 +93,61 @@ public class KarabasScraper : IEventScraper
                             if (root.TryGetProperty("content", out var contentEl))
                             {
                                 string htmlContent = contentEl.GetString() ?? "";
-                                
-                                var regex = new Regex(@"<div[^>]*class\s*=\s*""[^""]*title-row[^""]*""[^>]*>\s*<a\s+href\s*=\s*""([^""]+)""[^>]*>([\s\S]*?)</a>", RegexOptions.IgnoreCase);
-                                var matches = regex.Matches(htmlContent);
+                                var jsonLdRegex = new Regex(@"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
+                                var matches = jsonLdRegex.Matches(htmlContent);
 
                                 foreach (Match m in matches)
                                 {
-                                    var url = m.Groups[1].Value.Trim().Replace("\\/", "/");
-                                    var title = Regex.Replace(m.Groups[2].Value, "<.*?>", string.Empty).Trim().Replace("\n", " ");
-                                    
-                                    if (url.StartsWith("/")) url = "https://karabas.com" + url;
-
-                                    if (!linksToScrape.Any(x => x.Url == url))
+                                    try
                                     {
-                                        linksToScrape.Add((title, url, city, category));
+                                        using var ldDoc = JsonDocument.Parse(m.Groups[1].Value.Trim());
+                                        var ldRoot = ldDoc.RootElement;
+                                        var elements = ldRoot.ValueKind == JsonValueKind.Array ? ldRoot.EnumerateArray() : new[] { ldRoot }.AsEnumerable();
+
+                                        foreach (var node in elements)
+                                        {
+                                            if (node.TryGetProperty("@type", out var type) && (type.GetString()?.Contains("Event") ?? false))
+                                            {
+                                                string url = node.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+                                                if (string.IsNullOrEmpty(url)) continue;
+                                                if (url.StartsWith("/")) url = "https://karabas.com" + url;
+
+                                                lock (allEvents) { if (allEvents.Any(e => e.Url == url)) continue; }
+
+                                                string title = node.TryGetProperty("name", out var n) ? n.GetString() ?? "Без назви" : "Без назви";
+                                                string desc = node.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+                                                string img = node.TryGetProperty("image", out var i) ? (i.ValueKind == JsonValueKind.String ? i.GetString() : i.TryGetProperty("url", out var iu) ? iu.GetString() : "") : "";
+                                                string startDateRaw = node.TryGetProperty("startDate", out var s) ? s.GetString() ?? "" : "";
+
+                                                DateTime parsedDate = DateTime.TryParse(startDateRaw, out var dt) ? dt : DateTime.UtcNow.AddDays(2);
+
+                                                var newEvent = new ScrapedEvent
+                                                {
+                                                    Title = title.Trim(),
+                                                    Url = url.Trim(),
+                                                    Source = ProviderName,
+                                                    Description = desc.Replace("ПОКАЗАТИ ЩЕ", "").Trim(),
+                                                    Date = parsedDate.ToString("dd.MM.yyyy HH:mm"),
+                                                    ParsedDate = parsedDate,
+                                                    City = CityNormalizer.Normalize(city), // ✅ Твій нормалізатор (Uzhhorod)
+                                                    CityUk = CityTranslations.GetValueOrDefault(city, city),
+                                                    Category = category,
+                                                    ImageUrl = img.Trim(),
+                                                    ViewsCount = Random.Shared.Next(110, 340)
+                                                };
+
+                                                newEvent.GenerateDeterministicId();
+                                                lock (allEvents) { allEvents.Add(newEvent); }
+                                            }
+                                        }
                                     }
-                                }
-                                
-                                if (matches.Count > 0)
-                                {
-                                    _logger.LogInformation("   Отримано {Count} подій з {Category} (Сторінка {Page})", matches.Count, category, page);
+                                    catch { }
                                 }
                             }
 
-                            hasMorePages = false;
-                            if (root.TryGetProperty("pagination", out var pagEl))
-                            {
-                                string pagHtml = pagEl.GetString() ?? "";
-                                if (pagHtml.Contains("data-pagination-load-more"))
-                                {
-                                    hasMorePages = true;
-                                    page++;
-                                    await Task.Delay(Random.Shared.Next(800, 1500)); 
-                                }
-                            }
+                            hasMorePages = htmlContent.Contains("data-pagination-load-more");
+                            if (hasMorePages) page++;
+                            await Task.Delay(Random.Shared.Next(600, 1200));
                         }
                         catch (Exception ex)
                         {
@@ -146,75 +155,10 @@ public class KarabasScraper : IEventScraper
                             hasMorePages = false;
                         }
                     }
-                    
-                    await Task.Delay(Random.Shared.Next(1000, 2000));
+                    await Task.Delay(Random.Shared.Next(800, 1500));
                 }
             }
         }
-
-        _logger.LogInformation("🚀 Karabas: Глибокий збір деталей для {Count} подій через Puppeteer...", linksToScrape.Count);
-        
-        var tasks = linksToScrape.Select(async item =>
-        {
-            await _semaphore.WaitAsync();
-            IPage page = null;
-            
-            await Task.Delay(Random.Shared.Next(500, 1500)); 
-
-            int maxRetries = 3; 
-            
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
-            {
-                try
-                {
-                    if (browser.IsClosed) return;
-
-                    page = await browser.NewPageAsync();
-                    page.DefaultNavigationTimeout = 60000;
-                    page.DefaultTimeout = 60000;
-
-                    await page.GoToAsync(item.Url, new NavigationOptions 
-                    { 
-                        WaitUntil = new[] { WaitUntilNavigation.Load }, 
-                        Timeout = 60000 
-                    });
-
-                    var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
-                        const clean = (str) => {
-                            if (!str) return '';
-                            if (str.includes('Опис на сайті') || str.includes('Опис відсутній')) return '';
-                            return str.replace(/ПОКАЗАТИ ЩЕ/g, '').replace(/\s+/g, ' ').trim();
-                        };
-                        // ... логіка парсингу залишається ...
-                        return { Description: clean(document.querySelector('.event-description')?.innerText), Date: '', ImageUrl: '' };
-                    }");
-
-                    var newEvent = new ScrapedEvent
-                    {
-                        Title = item.Title,
-                        Url = item.Url,
-                        Source = ProviderName,
-                        Description = details.GetProperty("Description").GetString() ?? "",
-                        ParsedDate = DateParser.ParseUkrainianDate(details.GetProperty("Date").GetString()), 
-                        City = CityNormalizer.Normalize(item.City), // ✅ Твій нормалізатор
-                        CityUk = CityTranslations.GetValueOrDefault(item.City.ToLower(), item.City),
-                        Category = item.Category,
-                        ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
-                    };
-
-                    newEvent.GenerateDeterministicId();
-                    
-                    lock (allEvents) { allEvents.Add(newEvent); }
-                    _logger.LogInformation("✅ Karabas: {Title} [{City}]", newEvent.Title, newEvent.City);
-                    
-                    break; 
-                }
-                finally { if (page != null && !page.IsClosed) await page.CloseAsync(); }
-            }
-            _semaphore.Release(); 
-        });
-
-        await Task.WhenAll(tasks);
         return allEvents;
     }
 }
