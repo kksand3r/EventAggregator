@@ -27,6 +27,7 @@ public class ConcertUaScraper : IEventScraper
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
+    // Залишено тільки ваші 7 оригінальних категорій
     private static readonly Dictionary<string, string> CategoryPaths = new()
     {
         { "concerts",  "concerts"  },
@@ -38,14 +39,16 @@ public class ConcertUaScraper : IEventScraper
         { "festivals", "festivals" }
     };
 
+    // Ключі словника тепер стовідсотково відповідають системним слагам міст у нижньому регістрі
     private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)
     {
         { "kyiv", "Київ" }, { "odesa", "Одеса" }, { "dnipro", "Дніпро" }, { "lviv", "Львів" },
         { "kharkiv", "Харків" }, { "ivano-frankivsk", "Івано-Франківськ" }, { "vinnytsia", "Вінниця" },
-        { "poltava", "Полтава" }, { "zhitomir", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
-        { "ternopil", "Тернопіль" }, { "chernivtsy", "Чернівці" }, { "chernigiv", "Чернігів" },
-        { "khmelnitsky", "Хмельницький" }, { "rivne", "Рівне" }, { "lutsk", "Луцьк" },
-        { "mykolaiv", "Миколаїв" }, { "uzhhorod", "Ужгород" }, { "kropyvnytskyi", "Кропивницький" }
+        { "poltava", "Полтава" }, { "zhytomyr", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
+        { "ternopil", "Тернопіль" }, { "chernivtsi", "Чернівці" }, { "chernihiv", "Чернігів" },
+        { "sumy", "Суми" }, { "khmelnytskyi", "Хмельницький" }, { "rivne", "Рівне" },
+        { "lutsk", "Луцьк" }, { "mykolaiv", "Миколаїв" }, { "uzhhorod", "Ужгород" },
+        { "kropyvnytskyi", "Кропивницький" }
     };
 
     public ConcertUaScraper(ILogger<ConcertUaScraper> logger)
@@ -198,7 +201,7 @@ public class ConcertUaScraper : IEventScraper
 
         await Task.WhenAll(cityTasks);
 
-        _logger.LogInformation("🏁 {Provider}: Збір завершено. Фінальний звіт провайдера:", ProviderName);
+        _logger.LogInformation("🏁 {Provider}: Збір завершено. Финальний звіт провайдера:", ProviderName);
         _logger.LogInformation("=================================================");
 
         var statsByCity = allCollectedEvents.GroupBy(e => e.CityUk).OrderByDescending(g => g.Count());
