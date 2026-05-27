@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
+using EventAggregator.Domain.Parsing;
 using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
@@ -16,10 +17,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "uzhhorod" // "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private readonly string[] _categories =
@@ -61,14 +62,12 @@ public class KarabasScraper : IEventScraper
         using (var httpClient = new HttpClient(handler))
         {
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
-            httpClient.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
-            httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/javascript, */*; q=0.01");
             long timeStamp = new DateTimeOffset(DateTime.UtcNow.Date).ToUnixTimeSeconds();
 
             foreach (var city in _citySlugs)
             {
-                string cityLower = city.ToLowerInvariant();
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", cityLower.ToUpper());
+                string normalizedCity = CityNormalizer.Normalize(city);
+                _logger.LogInformation("🏙️ Karabas.com: Сканування: {City}", normalizedCity);
 
                 foreach (var category in _categories)
                 {
@@ -77,149 +76,74 @@ public class KarabasScraper : IEventScraper
 
                     while (hasMorePages)
                     {
-                        if (browser.IsClosed) return allEvents;
-
-                        string targetUrl = $"https://{cityLower}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
+                        string targetUrl = $"https://{city}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
                         try
                         {
                             var response = await httpClient.GetAsync(targetUrl);
-                            if (!response.IsSuccessStatusCode)
+                            if (!response.IsSuccessStatusCode) break;
+
+                            string htmlContent = await response.Content.ReadAsStringAsync();
+                            var jsonLdRegex = new Regex(@"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
+                            var matches = jsonLdRegex.Matches(htmlContent);
+
+                            foreach (Match m in matches)
                             {
-                                _logger.LogWarning("⚠️ Помилка API {Code} для {Url}", response.StatusCode, targetUrl);
-                                break;
-                            }
-
-                            string jsonString = await response.Content.ReadAsStringAsync();
-                            using var doc = JsonDocument.Parse(jsonString);
-                            var root = doc.RootElement;
-
-                            if (root.TryGetProperty("content", out var contentEl))
-                            {
-                                string htmlContent = contentEl.GetString() ?? "";
-
-                                var jsonLdRegex = new Regex(@"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
-                                var matches = jsonLdRegex.Matches(htmlContent);
-
-                                int parsedOnPageCount = 0;
-
-                                foreach (Match m in matches)
+                                try
                                 {
-                                    try
+                                    using var ldDoc = JsonDocument.Parse(m.Groups[1].Value.Trim());
+                                    var ldRoot = ldDoc.RootElement;
+                                    var elements = ldRoot.ValueKind == JsonValueKind.Array ? ldRoot.EnumerateArray() : new[] { ldRoot }.AsEnumerable();
+
+                                    foreach (var node in elements)
                                     {
-                                        string jsonLdBody = m.Groups[1].Value.Trim();
-                                        using var ldDoc = JsonDocument.Parse(jsonLdBody);
-                                        var ldRoot = ldDoc.RootElement;
-
-                                        if (ldRoot.TryGetProperty("@type", out var typeEl))
+                                        if (node.TryGetProperty("@type", out var type) && (type.GetString()?.Contains("Event") ?? false))
                                         {
-                                            string type = typeEl.GetString() ?? "";
-                                            if (type.Contains("Event") || type == "Festival")
+                                            string url = node.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+                                            if (string.IsNullOrEmpty(url)) continue;
+                                            if (url.StartsWith("/")) url = "https://karabas.com" + url;
+
+                                            lock (allEvents) { if (allEvents.Any(e => e.Url == url)) continue; }
+
+                                            string title = node.TryGetProperty("name", out var n) ? n.GetString() ?? "Без назви" : "Без назви";
+                                            string desc = node.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+                                            string img = node.TryGetProperty("image", out var i) ? (i.ValueKind == JsonValueKind.String ? i.GetString() : i.TryGetProperty("url", out var iu) ? iu.GetString() : "") : "";
+                                            string startDateRaw = node.TryGetProperty("startDate", out var s) ? s.GetString() ?? "" : "";
+
+                                            DateTime parsedDate = DateTime.TryParse(startDateRaw, out var dt) ? dt : DateTime.UtcNow.AddDays(2);
+
+                                            var newEvent = new ScrapedEvent
                                             {
-                                                string url = ldRoot.TryGetProperty("url", out var urlEl) ? urlEl.GetString() ?? "" : "";
-                                                string title = ldRoot.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
-                                                string description = ldRoot.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? "" : "";
-                                                
-                                                string imageUrl = "";
-                                                if (ldRoot.TryGetProperty("image", out var imgEl))
-                                                {
-                                                    if (imgEl.ValueKind == JsonValueKind.Object && imgEl.TryGetProperty("url", out var imgUrlEl))
-                                                        imageUrl = imgUrlEl.GetString() ?? "";
-                                                    else if (imgEl.ValueKind == JsonValueKind.String)
-                                                        imageUrl = imgEl.GetString() ?? "";
-                                                }
+                                                Title = title.Trim(),
+                                                Url = url.Trim(),
+                                                Source = ProviderName,
+                                                Description = desc.Replace("ПОКАЗАТИ ЩЕ", "").Trim(),
+                                                Date = parsedDate.ToString("dd.MM.yyyy HH:mm"),
+                                                ParsedDate = parsedDate,
+                                                City = normalizedCity, // ✅ Твій нормалізатор
+                                                CityUk = CityTranslations.GetValueOrDefault(city, city),
+                                                Category = category,
+                                                ImageUrl = img.Trim(),
+                                                ViewsCount = Random.Shared.Next(110, 340)
+                                            };
 
-                                                string startDateStr = ldRoot.TryGetProperty("startDate", out var dateEl) ? dateEl.GetString() ?? "" : "";
-
-                                                if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(title)) continue;
-                                                if (url.StartsWith("/")) url = "https://karabas.com" + url;
-
-                                                if (!string.IsNullOrEmpty(description))
-                                                {
-                                                    description = description
-                                                        .Replace("ПОКАЗАТИ ЩЕ", "")
-                                                        .Replace("Опис на сайті", "")
-                                                        .Replace("Опис відсутній", "");
-                                                    description = Regex.Replace(description, @"\s+", " ").Trim();
-                                                }
-
-                                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(2); 
-                                                string displayDate = startDateStr;
-
-                                                if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
-                                                {
-                                                    finalParsedDate = parsedOffset.DateTime;
-                                                    displayDate = parsedOffset.ToString("dd.MM.yyyy HH:mm");
-                                                }
-                                                else if (DateTime.TryParse(startDateStr, out var parsedNet))
-                                                {
-                                                    finalParsedDate = parsedNet;
-                                                    displayDate = parsedNet.ToString("dd.MM.yyyy HH:mm");
-                                                }
-
-                                                lock (allEvents)
-                                                {
-                                                    if (!allEvents.Any(x => x.Url == url))
-                                                    {
-                                                        var newEvent = new ScrapedEvent
-                                                        {
-                                                            Title = title.Trim(),
-                                                            Url = url.Trim(),
-                                                            Source = ProviderName,
-                                                            Description = description,
-                                                            Date = displayDate, 
-                                                            ParsedDate = finalParsedDate,
-                                                            // Зберігаємо виключно стабільний нижній регістр слага міст (напр. "uzhhorod")
-                                                            City = cityLower, 
-                                                            CityUk = CityTranslations.GetValueOrDefault(cityLower, cityLower),
-                                                            Category = category,
-                                                            ImageUrl = imageUrl.Trim(),
-                                                            ViewsCount = Random.Shared.Next(110, 340)
-                                                        };
-
-                                                        newEvent.GenerateDeterministicId();
-                                                        allEvents.Add(newEvent);
-                                                        parsedOnPageCount++;
-                                                        _logger.LogInformation("✅ Karabas (JSON-LD): {Title} [{City}]", newEvent.Title, newEvent.City.ToUpper());
-                                                    }
-                                                }
-                                            }
+                                            newEvent.GenerateDeterministicId();
+                                            lock (allEvents) { allEvents.Add(newEvent); }
                                         }
                                     }
-                                    catch (Exception)
-                                    {
-                                        // Ігноруємо CollectionPage / BreadcrumbList
-                                    }
                                 }
-
-                                if (parsedOnPageCount > 0)
-                                {
-                                    _logger.LogInformation("📦 Парсер знайшов {Count} подій з описом на Сторінці {Page} ({Category})", parsedOnPageCount, page, category);
-                                }
+                                catch { }
                             }
 
-                            hasMorePages = false;
-                            if (root.TryGetProperty("pagination", out var pagEl))
-                            {
-                                string pagHtml = pagEl.GetString() ?? "";
-                                if (pagHtml.Contains("data-pagination-load-more"))
-                                {
-                                    hasMorePages = true;
-                                    page++;
-                                    await Task.Delay(Random.Shared.Next(600, 1200));
-                                }
-                            }
+                            hasMorePages = htmlContent.Contains("data-pagination-load-more");
+                            if (hasMorePages) page++;
+                            await Task.Delay(Random.Shared.Next(600, 1200));
                         }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning("⚠️ Помилка збору {Url}: {Msg}", targetUrl, ex.Message);
-                            hasMorePages = false;
-                        }
+                        catch { hasMorePages = false; }
                     }
                     await Task.Delay(Random.Shared.Next(800, 1500));
                 }
             }
         }
-
         return allEvents;
     }
 }
