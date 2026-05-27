@@ -186,9 +186,9 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // ВИПРАВЛЕНО: Приводимо місто до нижнього регістру, щоб воно збігалося зі слагами в базі
+            // ✅ ВИПРАВЛЕНО: Шукаємо по точному Keyword-полю "city" у нижньому регістрі (слаг)
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city.keyword").Value(city.ToLowerInvariant())));
+                filters.Add(f => f.Term(t => t.Field(ev => ev.City).Value(city.ToLowerInvariant())));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
                 filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLowerInvariant())));
@@ -224,7 +224,8 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetMetadata()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                .Add("unique_cities", ag => ag.Terms(t => t.Field("city.keyword").Size(100)))
+                // ✅ ВИПРАВЛЕНО: Агрегація будується по чистому Keyword-полю "city"
+                .Add("unique_cities", ag => ag.Terms(t => t.Field(ev => ev.City).Size(100)))
                 .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
             ));
 
@@ -243,7 +244,8 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetStats()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                .Add("events_by_city", ag => ag.Terms(t => t.Field("city.keyword").Size(10)))
+                // ✅ ВИПРАВЛЕНО: Статистика збирається по чистому Keyword-полю "city"
+                .Add("events_by_city", ag => ag.Terms(t => t.Field(ev => ev.City).Size(10)))
                 .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
             ));
 
