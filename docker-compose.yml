@@ -68,6 +68,7 @@ services:
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
       - Gemini__ApiKey=${GEMINI_API_KEY:-""}
+      - ProxyServer=${PROXY_SERVER:-""}
     depends_on:
       - elasticsearch
     networks:
