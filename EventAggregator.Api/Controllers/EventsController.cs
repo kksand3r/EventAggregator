@@ -24,131 +24,100 @@ namespace EventAggregator.Api.Controllers
             _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
         }
 
-        [HttpGet("ai-search")]
-        public async Task<IActionResult> AiSearch([FromQuery] string? query)
+       [HttpGet("ai-search")]
+public async Task<IActionResult> AiSearch([FromQuery] string? query)
+{
+    if (string.IsNullOrWhiteSpace(query))
+        return Ok(new
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return Ok(new
-                {
-                    agentMessage = "Привіт! Яких подій ви шукаєте?",
-                    events = Enumerable.Empty<EventDto>()
-                });
+            agentMessage = "Привіт! Яких подій ви шукаєте?",
+            events = Enumerable.Empty<EventDto>()
+        });
 
-            try
+    try
+    {
+        var requestBody = new { query = query };
+        var content = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
+
+        if (!response.IsSuccessStatusCode)
+            return StatusCode((int)response.StatusCode, "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
+
+        var jsonResponse = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(jsonResponse);
+
+        var agentMessage = doc.RootElement.TryGetProperty("agentMessage", out var msgProp) 
+            ? msgProp.GetString() ?? "Не вдалося отримати відповідь від асистента." 
+            : "Не вдалося отримати відповідь від асистента.";
+
+        var rawMcpData = doc.RootElement.TryGetProperty("rawMcpData", out var rawProp) ? rawProp : default;
+        var eventsList = new List<EventDto>();
+
+        if (rawMcpData.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in rawMcpData.EnumerateArray())
             {
-                var requestBody = new { query = query };
-                var content = new StringContent(
-                    JsonSerializer.Serialize(requestBody),
-                    Encoding.UTF8,
-                    "application/json"
-                );
-
-                var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
-
-                if (!response.IsSuccessStatusCode)
-                    return StatusCode((int)response.StatusCode,
-                        "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
-
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(jsonResponse);
-
-                var agentMessage = doc.RootElement.TryGetProperty("agentMessage", out var msgProp) 
-                    ? msgProp.GetString() ?? "Не вдалося отримати відповідь від асистента." 
-                    : "Не вдалося отримати відповідь від асистента.";
-
-                var rawMcpData = doc.RootElement.TryGetProperty("rawMcpData", out var rawProp) 
-                    ? rawProp : default;
-
-                var eventsList = new List<EventDto>();
-
-                if (rawMcpData.ValueKind == JsonValueKind.Array)
+                if (item.TryGetProperty("text", out var textProp))
                 {
-                    foreach (var item in rawMcpData.EnumerateArray())
+                    var hitText = textProp.GetString();
+                    if (string.IsNullOrWhiteSpace(hitText)) continue;
+
+                    try
                     {
-                        if (item.TryGetProperty("text", out var textProp))
+                        using var esDoc = JsonDocument.Parse(hitText);
+                        var root = esDoc.RootElement;
+
+                        // Універсальний парсер: шукає або вкладені hits, або просто масив об'єктів
+                        var hits = root.TryGetProperty("hits", out var h) && h.TryGetProperty("hits", out var ha) 
+                            ? ha 
+                            : (root.ValueKind == JsonValueKind.Array ? root : default);
+
+                        if (hits.ValueKind == JsonValueKind.Array)
                         {
-                            var hitText = textProp.GetString();
-                            if (string.IsNullOrWhiteSpace(hitText)) continue;
-
-                            try
+                            foreach (var hit in hits.EnumerateArray())
                             {
-                                using var esDoc = JsonDocument.Parse(hitText);
+                                // Витягуємо _source, якщо він є (стандарт ES), або беремо сам об'єкт (якщо це вже "чистий" JSON події)
+                                var source = hit.TryGetProperty("_source", out var s) ? s : hit;
+                                
+                                var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(), 
+                                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                                if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
-                                    topHits.TryGetProperty("hits", out var hitsArray))
+                                if (scrapedEvent != null)
                                 {
-                                    foreach (var hit in hitsArray.EnumerateArray())
-                                    {
-                                        if (hit.TryGetProperty("_source", out var source))
-                                        {
-                                            var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(
-                                                source.GetRawText(), new JsonSerializerOptions
-                                                {
-                                                    PropertyNameCaseInsensitive = true
-                                                });
-
-                                            if (scrapedEvent != null)
-                                            {
-                                                if (string.IsNullOrEmpty(scrapedEvent.Id) &&
-                                                    hit.TryGetProperty("_id", out var idProp))
-                                                {
-                                                    scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
-                                                }
-
-                                                eventsList.Add(scrapedEvent.ToDto());
-                                            }
-                                        }
-                                    }
+                                    if (string.IsNullOrEmpty(scrapedEvent.Id) && hit.TryGetProperty("_id", out var idProp))
+                                        scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
+                                    
+                                    eventsList.Add(scrapedEvent.ToDto());
                                 }
-                                else if (esDoc.RootElement.ValueKind == JsonValueKind.Array)
-                                {
-                                    foreach (var hit in esDoc.RootElement.EnumerateArray())
-                                    {
-                                        var source = hit.TryGetProperty("_source", out var s) ? s : hit;
-                                        var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(),
-                                            new JsonSerializerOptions
-                                            {
-                                                PropertyNameCaseInsensitive = true
-                                            });
-
-                                        if (scrapedEvent != null)
-                                        {
-                                            if (string.IsNullOrEmpty(scrapedEvent.Id) &&
-                                                hit.TryGetProperty("_id", out var idProp))
-                                            {
-                                                scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
-                                            }
-
-                                            eventsList.Add(scrapedEvent.ToDto());
-                                        }
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Помилка парсингу результатів MCP: {ex.Message}");
                             }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"⚠️ Помилка парсингу результатів MCP: {ex.Message}");
+                    }
                 }
-
-                var uniqueEvents = eventsList.GroupBy(e => e.Id).Select(g => g.First()).ToList();
-
-                return Ok(new
-                {
-                    agentMessage = agentMessage,
-                    events = uniqueEvents
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new 
-                { 
-                    agentMessage = $"Помилка інтеграції MCP агента: {ex.Message}",
-                    events = Enumerable.Empty<EventDto>()
-                });
             }
         }
+
+        var uniqueEvents = eventsList.GroupBy(e => e.Id).Select(g => g.First()).ToList();
+
+        return Ok(new
+        {
+            agentMessage = agentMessage,
+            events = uniqueEvents
+        });
+    }
+    catch (Exception ex)
+    {
+        return StatusCode(500, new { agentMessage = $"Помилка: {ex.Message}", events = Enumerable.Empty<EventDto>() });
+    }
+}
 
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
