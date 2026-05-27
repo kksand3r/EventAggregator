@@ -98,7 +98,6 @@ function cleanSchema(schema) {
     return cleaned;
 }
 
-
 // =====================================================================
 // 🧠 API ДЛЯ ОБРОБКИ ЗАПИТІВ (AI SEARCH)
 // =====================================================================
@@ -159,24 +158,32 @@ app.post('/api/mcp-search', async (req, res) => {
             }
 
             let candidate = jsonResponse.candidates?.[0];
-            let part = candidate?.content?.parts?.[0];
+            let parts = candidate?.content?.parts || [];
 
             if (candidate?.content) conversationHistory.push(candidate.content);
 
-            if (part?.functionCall) {
-                const { name, args } = part.functionCall;
+            // ВИПРАВЛЕННЯ 1: Шукаємо потрібні частини у всьому масиві
+            let functionCallPart = parts.find(p => p.functionCall);
+            let textPart = parts.find(p => p.text);
+
+            if (functionCallPart) {
+                const { name, args } = functionCallPart.functionCall;
                 try {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
 
-                    // ВИПРАВЛЕННЯ: Обгортаємо результат у формат, який очікує EventsController
-                    lastMcpData = [{ text: JSON.stringify({ hits: { hits: toolResult.content } }) }];
+                    // ВИПРАВЛЕННЯ 2: Коректно витягуємо чистий JSON від Elasticsearch
+                    // Elastic MCP Server повертає текст у масиві об'єктів. Беремо саме його.
+                    const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
+                    if (toolTextContent) {
+                        lastMcpData = [{ text: toolTextContent }];
+                    }
 
                     conversationHistory.push({
                         role: "user",
                         parts: [{
                             functionResponse: {
                                 name: name,
-                                response: { output: JSON.stringify(toolResult.content) }
+                                response: { output: toolResult.content }
                             }
                         }]
                     });
@@ -186,15 +193,16 @@ app.post('/api/mcp-search', async (req, res) => {
                         parts: [{ functionResponse: { name: name, response: { error: toolError.message } } }]
                     });
                 }
-                continue;
+                continue; // Йдемо на наступну ітерацію циклу, щоб Gemini проаналізував дані
             }
 
-            if (part?.text) {
+            if (textPart) {
                 return res.json({
-                    agentMessage: part.text,
+                    agentMessage: textPart.text,
                     rawMcpData: lastMcpData
                 });
             }
+
             break;
         }
 

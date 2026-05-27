@@ -5,23 +5,23 @@ import { Loader2, X, MapPin, Tag, Filter } from "lucide-react";
 import EventCard from "@/components/EventCard";
 import Pagination from "@/components/Pagination";
 import EmptyState from "@/components/EmptyState";
-import { useEventFilters } from "@/hooks/useEventFilters";
 import { useMetadata } from "@/hooks/useMetadata";
 import { fetchEvents, type EventListItem } from "@/lib/api";
 import { formatCategory, getApiCategory } from "@/lib/categoryMapping";
+import { useEventFilters } from "@/hooks/useEventFilters";
 
 interface CatalogTabProps {
     onTotalCountChange?: (total: number) => void;
+    filters: ReturnType<typeof useEventFilters>; // ОНОВЛЕНО: Приймаємо єдиний стан фільтрів
 }
 
-// Універсальний форматувальник: робить "uzhhorod" -> "Uzhhorod"
 function formatCityName(city: string): string {
     if (!city || city === "All") return "All Cities";
     return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
 }
 
-export default function CatalogTab({ onTotalCountChange }: CatalogTabProps) {
-    const filters = useEventFilters();
+export default function CatalogTab({ onTotalCountChange, filters }: CatalogTabProps) {
+    // 🛑 ВИДЕЛЕНО: Тут більше немає локального const filters = useEventFilters();
     const { metadata } = useMetadata();
 
     const [events, setEvents] = useState<EventListItem[]>([]);
@@ -37,10 +37,9 @@ export default function CatalogTab({ onTotalCountChange }: CatalogTabProps) {
         setEvents([]);
 
         const apiCategory = filters.selectedCategory !== "All" ? getApiCategory(filters.selectedCategory) : undefined;
-        // Передаємо місто як є, бо бекенд тепер обробляє його коректно
         const apiCity = filters.selectedCity !== "All" ? filters.selectedCity : undefined;
 
-        console.log("Fetching events for city:", apiCity);
+        console.log("Fetching events for city:", apiCity, "category:", apiCategory);
 
         fetchEvents({
             city: apiCity,
@@ -70,7 +69,8 @@ export default function CatalogTab({ onTotalCountChange }: CatalogTabProps) {
         return () => {
             cancelled = true;
         };
-    }, [filters.selectedCategory, filters.selectedCity, filters.currentPage, onTotalCountChange]);
+        // Ретельно стежимо за залежностями, щоб запит відбувався синхронно зі зміною URL
+    }, [filters.selectedCategory, filters.selectedCity, filters.currentPage]);
 
     return (
         <div className="space-y-6">

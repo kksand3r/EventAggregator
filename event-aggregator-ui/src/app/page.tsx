@@ -36,7 +36,8 @@ function HomeContent() {
                 setAllEvents(eventsRes.data);
                 setTotalEvents(eventsRes.total);
 
-                const byViews = [...eventsRes.data].sort((a, b) => b.viewCount - a.viewCount);
+                // ОНОВЛЕНО: Використовуємо viewsCount замість viewCount відповідно до бекенд DTO
+                const byViews = [...eventsRes.data].sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0));
                 const top6    = byViews.slice(0, 6);
                 const rest    = eventsRes.data.filter(e => !top6.includes(e)).sort(() => Math.random() - 0.5);
                 setFeaturedEvents([...top6, ...rest.slice(0, 6)]);
@@ -51,7 +52,6 @@ function HomeContent() {
     }, []);
 
     useEffect(() => {
-        // AI пошук — тільки дропдаун в SearchBar, тут нічого не робимо
         if (filters.searchMode === 'ai') {
             setSearchResults(null);
             return;
@@ -184,13 +184,14 @@ function HomeContent() {
                             </>
                         )}
                         {filters.activeTab === "catalog" && (
-                            <CatalogTab onTotalCountChange={setTotalEvents} />
+                            <CatalogTab filters={filters} onTotalCountChange={setTotalEvents} />
                         )}
                     </>
                 )}
 
+                {/* ОНОВЛЕНО: Передаємо єдиний екземпляр filters */}
                 {!filters.search.trim() && filters.activeTab === "catalog" && (
-                    <CatalogTab onTotalCountChange={setTotalEvents} />
+                    <CatalogTab filters={filters} onTotalCountChange={setTotalEvents} />
                 )}
 
                 {filters.activeTab === "timeline" && <TimelineTab />}
