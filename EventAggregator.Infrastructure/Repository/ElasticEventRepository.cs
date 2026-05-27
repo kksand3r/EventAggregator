@@ -27,16 +27,25 @@ public class ElasticEventRepository : IEventRepository
         var response = await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
+                    // 📝 1. Поля для повнотекстового пошуку (розумний пошук з відмінками)
                     .Text(t => t.Title, g => g.Analyzer("ukrainian")) 
                     .Text(t => t.Description, g => g.Analyzer("ukrainian")) 
-                    .Text(t => t.Category, g => g
-                        .Analyzer("ukrainian")
-                        .Fields(f => f
-                            .Keyword("keyword")
-                        )
-                    )
-                    .Keyword(k => k.City)
                     .Text(t => t.CityUk, g => g.Analyzer("ukrainian"))
+                    .Text(t => t.Category, g => g
+                            .Analyzer("ukrainian")
+                            .Fields(f => f.Keyword("keyword")) // Підполе для точної фільтрації (category.keyword)
+                    )
+
+                    // 🔍 2. Поля для точного збігу / фільтрації (без розбиття на слова)
+                    .Keyword(k => k.City)
+                    .Keyword(k => k.Source)
+                    .Keyword(k => k.Url)
+                    .Keyword(k => k.ImageUrl)
+                    .Keyword(k => k.Id)
+
+                    // 📅 3. Дати та числа (для правильного сортування і діапазонів)
+                    .Date(d => d.ParsedDate)
+                    .Number(n => n.ViewsCount, n => n.Type(NumberType.Long))
                 )
             ), ct);
 
