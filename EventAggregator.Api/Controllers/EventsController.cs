@@ -186,12 +186,12 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // ✅ ОНОВЛЕНО: Приводимо до нижнього регістру слагу, бо скрапери пишуть "uzhhorod", "rivne"
+            // 🌟 ВИПРАВЛЕНО: Змінено "city.keyword" на "city", оскільки це чистий Keyword-тип
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field(ev => ev.City).Value(city.ToLowerInvariant())));
+                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToUpper())));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
-                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLowerInvariant())));
+                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .From(from)
@@ -224,8 +224,8 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetMetadata()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                // ✅ ВИПРАВЛЕНО: Агрегація будується по чистому Keyword-полю "city"
-                .Add("unique_cities", ag => ag.Terms(t => t.Field(ev => ev.City).Size(100)))
+                // 🌟 ВИПРАВЛЕНО: агрегація йде прямо по полю "city"
+                .Add("unique_cities", ag => ag.Terms(t => t.Field("city").Size(100)))
                 .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
             ));
 
@@ -244,8 +244,8 @@ namespace EventAggregator.Api.Controllers
         public async Task<IActionResult> GetStats()
         {
             var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                // ✅ ВИПРАВЛЕНО: Статистика збирається по чистому Keyword-полю "city"
-                .Add("events_by_city", ag => ag.Terms(t => t.Field(ev => ev.City).Size(10)))
+                // 🌟 ВИПРАВЛЕНО: аналогічно, рахуємо статистику по чистому "city"
+                .Add("events_by_city", ag => ag.Terms(t => t.Field("city").Size(10)))
                 .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
             ));
 
