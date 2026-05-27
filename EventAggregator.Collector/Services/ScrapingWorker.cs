@@ -45,7 +45,24 @@ public class ScrapingWorker : BackgroundService
     {
         _logger.LogInformation("🚀 Початок сесії скрайпінгу: {time}", DateTimeOffset.Now);
 
-        string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
+        string proxyServerEnv = Environment.GetEnvironmentVariable("ProxyServer");
+        string cleanProxyArg = string.Empty;
+
+        // Перевіряємо та очищуємо рядок проксі для Chromium (потрібно виділити лише host:port)
+        if (!string.IsNullOrEmpty(proxyServerEnv))
+        {
+            try
+            {
+                var proxyUri = new Uri(proxyServerEnv);
+                // Формуємо чистий аргумент проксі для Chromium, наприклад: --proxy-server=http://84.247.60.125:6095
+                cleanProxyArg = $"--proxy-server={proxyUri.Scheme}://{proxyUri.Host}:{proxyUri.Port}";
+                _logger.LogInformation("⚙️ Налаштовано проксі-сервер для Chromium: {Scheme}://{Host}:{Port}", proxyUri.Scheme, proxyUri.Host, proxyUri.Port);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "⚠️ Не вдалося розпарсити рядок ProxyServer: {Url}", proxyServerEnv);
+            }
+        }
 
         try
         {
@@ -66,7 +83,7 @@ public class ScrapingWorker : BackgroundService
                         "--disable-software-rasterizer",
                         "--disable-blink-features=AutomationControlled",
                         "--window-size=1920,1080",
-                        !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : ""
+                        cleanProxyArg
                     }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray()
                 };
             }
@@ -82,7 +99,7 @@ public class ScrapingWorker : BackgroundService
                         "--disable-dev-shm-usage",
                         "--disable-blink-features=AutomationControlled",
                         "--window-size=1920,1080",
-                        !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : ""
+                        cleanProxyArg
                     }.Where(arg => !string.IsNullOrEmpty(arg)).ToArray()
                 };
             }
