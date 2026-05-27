@@ -106,7 +106,6 @@ app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
 
-        // ✅ ФІХ 1: Логуємо вхідний запит — щоб переконатись що query різний
         console.log(`\n🔍 [${new Date().toISOString()}] Query received: "${query}"`);
 
         if (!query) return res.status(400).json({ error: "Query is required" });
@@ -114,8 +113,7 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const mcpTools = await mcpClient.listTools();
 
-        // ✅ Залишаємо тільки інструмент пошуку — прибираємо list_indices, get_mappings тощо
-        // Gemini витрачав всі ітерації на "розвідку" замість реального пошуку
+        // Залишаємо тільки інструмент пошуку
         const ALLOWED_TOOLS = ['search'];
         const functionDeclarations = mcpTools.tools
             .filter(tool => ALLOWED_TOOLS.includes(tool.name))
@@ -129,7 +127,6 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        // ✅ ФІХ 2: Додаємо унікальний request_id у промпт — щоб Gemini не кешував відповіді
         const requestId = Date.now();
 
         let conversationHistory = [
@@ -149,28 +146,26 @@ app.post('/api/mcp-search', async (req, res) => {
 
 СУВОРІ ПРАВИЛА — виконай їх точно:
 1. Відразу викликай інструмент "search" з індексом "events". НЕ викликай list_indices або get_mappings.
-2. Використовуй multi_match по полях ["title", "description", "category"] для пошуку теми.
-3. Якщо у запиті є місто — додай match по полю "cityUk" з назвою міста українською.
-4. Якщо у запиті згадується місяць (наприклад "червень") — додай фільтр range по полю "parsedDate" на цей місяць поточного року.
-5. Сортуй за parsedDate asc.
-6. Виведи знайдені події списком у форматі: [Назва - Дата](/events/ID).
-7. НЕ вигадуй пояснень що події "ще не додані" або "система відображає інший місяць". Якщо результати є — просто виведи їх. Якщо результатів немає — скажи що подій не знайдено.
+2. ОБОВ'ЯЗКОВО передавай queryBody з конкретними фільтрами. НІКОЛИ не передавай порожній queryBody: {}.
+3. Використовуй multi_match по полях ["title", "description", "category"] для пошуку теми.
+4. Якщо у запиті є місто — додай match по полю "cityUk" з назвою міста українською.
+5. Якщо у запиті згадується місяць (наприклад "червень") — додай фільтр range по полю "parsedDate" на цей місяць поточного року.
+6. Сортуй за parsedDate asc.
+7. Виведи знайдені події списком у форматі: [Назва - Дата](/events/ID).
+8. НЕ вигадуй пояснень що події "ще не додані" або "система відображає інший місяць". Якщо результати є — просто виведи їх. Якщо результатів немає — скажи що подій не знайдено.
         ` }]
             }
         ];
 
         let lastMcpData = [];
         let loopCount = 0;
-        const MAX_LOOPS = 6; // ✅ Збільшено: потрібно місце для search + фінальна відповідь
-        let toolWasCalled = false; // ✅ ФІХ 3: Відстежуємо чи інструмент взагалі викликався
+        const MAX_LOOPS = 6;
+        let toolWasCalled = false;
 
         while (loopCount < MAX_LOOPS) {
             loopCount++;
 
-            // ✅ ФІХ 4: На першій ітерації — режим ANY (примусовий виклик інструменту).
-            //          На наступних — AUTO (щоб Gemini міг сформувати текстову відповідь).
             const callingMode = (!toolWasCalled) ? "ANY" : "AUTO";
-
             console.log(`  ↳ Loop ${loopCount}, mode: ${callingMode}`);
 
             let geminiRequestBody = {
@@ -195,7 +190,6 @@ app.post('/api/mcp-search', async (req, res) => {
             let candidate = jsonResponse.candidates?.[0];
             let parts = candidate?.content?.parts || [];
 
-            // ✅ ФІХ 5: Логуємо що саме повернув Gemini
             const partTypes = parts.map(p => p.functionCall ? `functionCall(${p.functionCall.name})` : 'text');
             console.log(`  ↳ Gemini returned: [${partTypes.join(', ')}]`);
 
@@ -205,9 +199,31 @@ app.post('/api/mcp-search', async (req, res) => {
             let textPart = parts.find(p => p.text);
 
             if (functionCallPart) {
-                toolWasCalled = true; // ✅ Позначаємо що інструмент був викликаний
                 const { name, args } = functionCallPart.functionCall;
 
+                // ✅ БЛОКУЄМО порожній queryBody
+                // Gemini іноді робить "розвідувальний" запит без фільтрів і отримує всі 2752 події.
+                // Після цього він вирішує що вже має достатньо даних і не робить нормальний запит.
+                // Замість виконання — повертаємо помилку і змушуємо його повторити з фільтрами.
+                const qb = args?.queryBody;
+                const isEmptyQuery = !qb || Object.keys(qb).length === 0;
+                if (name === 'search' && isEmptyQuery) {
+                    console.log(`  ↳ ⛔ Blocked empty queryBody — forcing Gemini to retry with filters`);
+                    conversationHistory.push({
+                        role: "user",
+                        parts: [{
+                            functionResponse: {
+                                name,
+                                response: {
+                                    error: "queryBody не може бути порожнім. Сформуй конкретний запит з фільтрами по місту, категорії або даті відповідно до запиту користувача. Не роби загальний пошук без фільтрів."
+                                }
+                            }
+                        }]
+                    });
+                    continue; // повертаємось до початку циклу без зміни toolWasCalled
+                }
+
+                toolWasCalled = true;
                 console.log(`  ↳ Calling MCP tool: ${name}`, JSON.stringify(args));
 
                 try {
@@ -215,8 +231,6 @@ app.post('/api/mcp-search', async (req, res) => {
 
                     const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
                     if (toolTextContent) {
-                        // ✅ Elastic MCP повертає текст виду "Results: {...}" або просто JSON
-                        // Витягуємо JSON з відповіді
                         let jsonText = toolTextContent;
                         const jsonMatch = toolTextContent.match(/\{[\s\S]*\}/);
                         if (jsonMatch) jsonText = jsonMatch[0];
@@ -262,7 +276,6 @@ app.post('/api/mcp-search', async (req, res) => {
             break;
         }
 
-        // ✅ ФІХ 7: Якщо інструмент так і не викликався — повертаємо явну помилку для діагностики
         if (!toolWasCalled) {
             console.warn("  ↳ ⚠️ WARNING: MCP tool was never called by Gemini!");
         }

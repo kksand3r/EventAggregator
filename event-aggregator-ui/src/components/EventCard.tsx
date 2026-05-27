@@ -22,6 +22,19 @@ function getCategoryLabel(event: EventListItem): string {
     return "Подія";
 }
 
+function formatDate(raw: string | undefined): string {
+    if (!raw) return "Дата невідома";
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return raw;
+    return d.toLocaleString("uk-UA", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
 export default function EventCard({event, index = 0}: EventCardProps) {
     if (!event) return null;
 
@@ -92,7 +105,7 @@ export default function EventCard({event, index = 0}: EventCardProps) {
                     <div className="flex flex-wrap items-center gap-y-1.5 gap-x-3.5 text-[12.5px]">
                         <span className="flex items-center gap-1 text-[#FFD166] font-semibold">
                             <Calendar className="w-[13px] h-[13px]"/>
-                            {event.date}
+                            {formatDate(event.date)}
                         </span>
                         <span className="flex items-center gap-1 text-white/75 font-medium">
                             <MapPin className="w-[13px] h-[13px]"/>
