@@ -15,10 +15,10 @@ public class ConcertUaScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "mykolaiv", "uzhhorod", "kropyvnytskyi" // "lviv", "kharkiv", "ivano-frankivsk",
-        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)

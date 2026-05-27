@@ -1,4 +1,8 @@
-﻿using System.Runtime.InteropServices;
+﻿using System;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
@@ -10,10 +14,10 @@ public class ScrapingWorker : BackgroundService
 {
     private readonly ILogger<ScrapingWorker> _logger;
     private readonly ScrapingService _scrapingService;
-    private readonly IHostApplicationLifetime _hostApplicationLifetime;
+    private readonly IHostApplicationLifetime _hostApplicationLifetime; 
 
     public ScrapingWorker(
-        ILogger<ScrapingWorker> logger,
+        ILogger<ScrapingWorker> logger, 
         ScrapingService scrapingService,
         IHostApplicationLifetime hostApplicationLifetime)
     {
@@ -25,7 +29,7 @@ public class ScrapingWorker : BackgroundService
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("🌐 Підготовка браузера для Cron-завдання...");
-        try
+        try 
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
@@ -37,7 +41,6 @@ public class ScrapingWorker : BackgroundService
             _logger.LogCritical(ex, "❌ Не вдалося підготувати браузер.");
             throw;
         }
-
         await base.StartAsync(cancellationToken);
     }
 
@@ -53,14 +56,14 @@ public class ScrapingWorker : BackgroundService
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                launchOptions = new LaunchOptions
-                {
+                launchOptions = new LaunchOptions 
+                { 
                     Headless = true,
                     ExecutablePath = "/usr/bin/chromium",
-                    Args = new[]
-                    {
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
+                    Args = new[] 
+                    { 
+                        "--no-sandbox", 
+                        "--disable-setuid-sandbox", 
                         "--disable-dev-shm-usage",
                         "--disable-gpu",
                         "--disable-software-rasterizer",
@@ -72,14 +75,14 @@ public class ScrapingWorker : BackgroundService
             }
             else
             {
-                launchOptions = new LaunchOptions
-                {
+                launchOptions = new LaunchOptions 
+                { 
                     Headless = true,
-                    Args = new[]
-                    {
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
+                    Args = new[] 
+                    { 
+                        "--no-sandbox", 
+                        "--disable-setuid-sandbox", 
+                        "--disable-dev-shm-usage", 
                         "--disable-blink-features=AutomationControlled",
                         "--window-size=1920,1080",
                         !string.IsNullOrEmpty(proxyServer) ? $"--proxy-server={proxyServer}" : ""
@@ -92,7 +95,6 @@ public class ScrapingWorker : BackgroundService
                 await _scrapingService.ProcessAllSourcesAsync(browser, stoppingToken);
                 await browser.CloseAsync();
             }
-
             _logger.LogInformation("✅ Скрайпінг успішно завершено.");
         }
         catch (Exception ex)

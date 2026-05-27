@@ -13,7 +13,7 @@ namespace EventAggregator.Application.Services
         private readonly ILogger<ScrapingService> _logger;
 
         public ScrapingService(
-            IEnumerable<IEventScraper> scrapers,
+            IEnumerable<IEventScraper> scrapers, 
             IEventRepository repository,
             ILogger<ScrapingService> logger)
         {
@@ -24,8 +24,9 @@ namespace EventAggregator.Application.Services
 
         public async Task ProcessAllSourcesAsync(IBrowser browser, CancellationToken ct)
         {
+            // ✅ Створюємо індекс з правильним маппінгом до запису даних
             await _repository.EnsureIndexCreatedAsync(ct);
-
+            
             var allEvents = new List<ScrapedEvent>();
 
             foreach (var scraper in _scrapers)
@@ -41,11 +42,11 @@ namespace EventAggregator.Application.Services
                     _logger.LogError(ex, "Помилка скрапера {Provider}", scraper.ProviderName);
                 }
             }
-
+            
             var uniqueEvents = allEvents.Distinct(EventEqualityComparer.Instance).ToList();
-
+        
             _logger.LogInformation("Зібрано: {Total}. Після очистки: {Unique}", allEvents.Count, uniqueEvents.Count);
-
+            
             await _repository.SaveEventsAsync(uniqueEvents, ct);
         }
     }

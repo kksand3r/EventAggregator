@@ -24,7 +24,7 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "rivne" // "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi" "ivano-frankivsk",
+        "kropyvnytskyi" //"odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
         //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
         //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
