@@ -1,14 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
+﻿using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
+using EventAggregator.Domain.Parsing;
 using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
@@ -24,10 +19,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "mykolaiv", "uzhhorod", "kropyvnytskyi" // "lviv", "kharkiv", "ivano-frankivsk",
-        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private readonly string[] _categories =
@@ -167,14 +162,45 @@ public class KarabasScraper : IEventScraper
                     if (browser.IsClosed) return;
 
                     page = await browser.NewPageAsync();
+
+                    // Stealth режим — приховуємо що це автоматизований браузер
+                    await page.EvaluateExpressionOnNewDocumentAsync(@"
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                        window.chrome = { runtime: {} };
+                        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                        Object.defineProperty(navigator, 'languages', { get: () => ['uk-UA', 'uk', 'en-US', 'en'] });
+                    ");
+
                     page.DefaultNavigationTimeout = 60000;
                     page.DefaultTimeout = 60000;
 
                     await page.GoToAsync(item.Url, new NavigationOptions 
                     { 
-                        WaitUntil = new[] { WaitUntilNavigation.Load }, 
+                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 },
                         Timeout = 60000 
                     });
+
+                    // Перевірка чи Cloudflare не заблокував
+                    var pageTitle = await page.GetTitleAsync();
+                    _logger.LogInformation("📄 Page title: {Title} for {Url}", pageTitle, item.Url);
+
+                    if (pageTitle.Contains("Just a moment") || pageTitle.Contains("Attention Required"))
+                    {
+                        _logger.LogWarning("🔒 Cloudflare заблокував {Url}", item.Url);
+                        break;
+                    }
+
+                    try
+                    {
+                        await page.WaitForSelectorAsync(
+                            ".date-time-location, .date-time, .event-date",
+                            new WaitForSelectorOptions { Timeout = 10000 }
+                        );
+                    }
+                    catch
+                    {
+                        _logger.LogWarning("⚠️ Селектор дати не знайдено для {Url}", item.Url);
+                    }
 
                     var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
                         const clean = (str) => {
@@ -228,6 +254,7 @@ public class KarabasScraper : IEventScraper
                     }");
 
                     string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
+                    _logger.LogInformation("📅 Дата для {Title}: '{Date}'", item.Title, rawDate);
                     
                     var newEvent = new ScrapedEvent
                     {
@@ -237,7 +264,7 @@ public class KarabasScraper : IEventScraper
                         Description = details.GetProperty("Description").GetString() ?? "",
                         Date = rawDate,
                         ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
-                        City = item.City.ToUpper(),
+                        City = CityNormalizer.Normalize(item.City),
                         CityUk = CityTranslations.GetValueOrDefault(item.City.ToLower(), item.City),
                         Category = item.Category,
                         ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
