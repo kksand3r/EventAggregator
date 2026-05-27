@@ -29,7 +29,10 @@ namespace EventAggregator.Api.Controllers
         {
             if (string.IsNullOrWhiteSpace(query))
                 return Ok(new
-                    { AgentMessage = "Привіт! Яких подій ви шукаєте?", Events = Enumerable.Empty<EventDto>() });
+                {
+                    agentMessage = "Привіт! Яких подій ви шукаєте?",
+                    events = Enumerable.Empty<EventDto>()
+                });
 
             try
             {
@@ -49,8 +52,12 @@ namespace EventAggregator.Api.Controllers
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
 
-                var agentMessage = doc.RootElement.GetProperty("agentMessage").GetString();
-                var rawMcpData = doc.RootElement.GetProperty("rawMcpData");
+                var agentMessage = doc.RootElement.TryGetProperty("agentMessage", out var msgProp) 
+                    ? msgProp.GetString() ?? "Не вдалося отримати відповідь від асистента." 
+                    : "Не вдалося отримати відповідь від асистента.";
+
+                var rawMcpData = doc.RootElement.TryGetProperty("rawMcpData", out var rawProp) 
+                    ? rawProp : default;
 
                 var eventsList = new List<EventDto>();
 
@@ -129,16 +136,21 @@ namespace EventAggregator.Api.Controllers
 
                 return Ok(new
                 {
-                    AgentMessage = agentMessage,
-                    Events = uniqueEvents
+                    agentMessage = agentMessage,
+                    events = uniqueEvents
                 });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { Message = $"Помилка інтеграції MCP агента: {ex.Message}" });
+                return StatusCode(500, new 
+                { 
+                    agentMessage = $"Помилка інтеграції MCP агента: {ex.Message}",
+                    events = Enumerable.Empty<EventDto>()
+                });
             }
         }
 
+        // Решта методів без змін
         [HttpGet("search")]
         public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
         {
@@ -186,8 +198,6 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // ✅ Тепер очікуємо точний збіг (наприклад, "Uzhhorod"), 
-            // який приходить з фронтенду (через metadata) і лежить у базі.
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
                 filters.Add(f => f.Term(t => t.Field("city").Value(city)));
 

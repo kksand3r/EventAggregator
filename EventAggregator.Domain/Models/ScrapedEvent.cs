@@ -20,8 +20,8 @@ public class ScrapedEvent
 
     public void GenerateDeterministicId()
     {
-        var rawString = $"{Title}_{City}_{Date}".ToLowerInvariant();
-
+        var rawString = $"{Title}_{City}_{ParsedDate:yyyy-MM-dd_HH:mm}";
+        
         using var md5 = MD5.Create();
         var hashBytes = md5.ComputeHash(Encoding.UTF8.GetBytes(rawString));
         Id = new Guid(hashBytes).ToString();
