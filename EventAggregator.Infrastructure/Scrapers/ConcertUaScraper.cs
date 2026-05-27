@@ -1,4 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
 using EventAggregator.Application.Parsing;
@@ -11,25 +19,36 @@ public class ConcertUaScraper : IEventScraper
 {
     public string ProviderName => "Concert.ua";
     private readonly ILogger<ConcertUaScraper> _logger;
-    private readonly SemaphoreSlim _semaphore = new(4);
+    // Семафор на рівні міст — 5 міст паралельно
+    private readonly SemaphoreSlim _semaphore = new(5);
 
     private readonly string[] _citySlugs =
     {
-        "uzhhorod" // "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhitomir", "zaporizhzhia", "ternopil",
+        "chernivtsy", "chernigiv", "khmelnitsky", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+    };
+
+    private static readonly Dictionary<string, string> CategoryPaths = new()
+    {
+        { "concerts",  "concerts"  },
+        { "theatres",  "theater"   },
+        { "stand-up",  "humor"     },
+        { "child",      "kids"      },
+        { "clubs",      "electronic"},
+        { "inshe",      "other"     },
+        { "festivals", "festivals" }
     };
 
     private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)
     {
         { "kyiv", "Київ" }, { "odesa", "Одеса" }, { "dnipro", "Дніпро" }, { "lviv", "Львів" },
         { "kharkiv", "Харків" }, { "ivano-frankivsk", "Івано-Франківськ" }, { "vinnytsia", "Вінниця" },
-        { "poltava", "Полтава" }, { "zhytomyr", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
-        { "ternopil", "Тернопіль" }, { "chernivtsi", "Чернівці" }, { "chernihiv", "Чернігів" },
-        { "sumy", "Суми" }, { "khmelnytskyi", "Хмельницький" }, { "rivne", "Рівне" },
-        { "lutsk", "Луцьк" }, { "mykolaiv", "Миколаїв" }, { "uzhhorod", "Ужгород" },
-        { "kropyvnytskyi", "Кропивницький" }
+        { "poltava", "Полтава" }, { "zhitomir", "Житомир" }, { "zaporizhzhia", "Запоріжжя" },
+        { "ternopil", "Тернопіль" }, { "chernivtsy", "Чернівці" }, { "chernigiv", "Чернігів" },
+        { "khmelnitsky", "Хмельницький" }, { "rivne", "Рівне" }, { "lutsk", "Луцьк" },
+        { "mykolaiv", "Миколаїв" }, { "uzhhorod", "Ужгород" }, { "kropyvnytskyi", "Кропивницький" }
     };
 
     public ConcertUaScraper(ILogger<ConcertUaScraper> logger)
@@ -40,133 +59,163 @@ public class ConcertUaScraper : IEventScraper
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
         var allCollectedEvents = new List<ScrapedEvent>();
-        if (browser.IsClosed) return allCollectedEvents;
 
-        using var mainPage = await browser.NewPageAsync();
-        await mainPage.SetUserAgentAsync(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
+        var handler = new HttpClientHandler { AllowAutoRedirect = false };
 
-        var eventLinks = new List<(string Title, string Url, string CitySlug)>();
-
-        foreach (var citySlug in _citySlugs)
+        if (!string.IsNullOrEmpty(proxyServer))
         {
-            // Форматуємо назву міста для логів та сумісності з UI (напр. "Uzhhorod")
-            string formattedCity = citySlug.Substring(0, 1).ToUpper() + citySlug.Substring(1).ToLower();
-            _logger.LogInformation("🏙️ Concert.ua: Пошук у місті: {City}", formattedCity);
-            
-            try
+            var proxyUri = new Uri(proxyServer);
+            var proxy = new WebProxy(proxyUri);
+            if (!string.IsNullOrEmpty(proxyUri.UserInfo))
             {
-                await mainPage.GoToAsync($"https://concert.ua/uk/{citySlug}", WaitUntilNavigation.Networkidle2);
-
-                var links = await mainPage.EvaluateFunctionAsync<JsonElement[]>(@"() => {
-                    return Array.from(document.querySelectorAll('a[href*=""/event/""]'))
-                        .map(card => ({
-                            title: card.innerText.split('\n')[0].trim(),
-                            url: card.getAttribute('href')
-                        })).filter(e => e.title.length > 2);
-                }");
-
-                foreach (var link in links)
-                {
-                    string rawUrl = link.GetProperty("url").GetString() ?? "";
-                    if (string.IsNullOrEmpty(rawUrl)) continue;
-
-                    string fullUrl = rawUrl.StartsWith("http") ? rawUrl : "https://concert.ua" + rawUrl.Split('?')[0];
-                    if (!eventLinks.Any(x => x.Url == fullUrl))
-                    {
-                        eventLinks.Add((link.GetProperty("title").GetString() ?? "Без назви", fullUrl, citySlug));
-                    }
-                }
+                var parts = proxyUri.UserInfo.Split(':', 2);
+                proxy.Credentials = new NetworkCredential(parts[0], parts[1]);
             }
-            catch (Exception ex)
-            {
-                string formattedCityErr = citySlug.Substring(0, 1).ToUpper() + citySlug.Substring(1).ToLower();
-                _logger.LogError("❌ Помилка списку {City}: {Message}", formattedCityErr, ex.Message);
-            }
+            handler.Proxy = proxy;
+            handler.UseProxy = true;
+            handler.PreAuthenticate = true;
         }
 
-        _logger.LogInformation("🚀 Concert.ua: Детальний збір {Count} подій...", eventLinks.Count);
+        using var httpClient = new HttpClient(handler);
+        httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
-        var tasks = eventLinks.Select(async item =>
+        _logger.LogInformation("🚀 Початок швидкого скрапінгу Concert.ua через API + JSON-LD...");
+
+        var cityTasks = _citySlugs.Select(async citySlug =>
         {
             await _semaphore.WaitAsync();
+            string cityLower = citySlug.ToLowerInvariant();
+            _logger.LogInformation("🏙️ Concert.ua: Сканування міста {City}...", cityLower.ToUpper());
+
             try
             {
-                if (browser.IsClosed) return;
+                // Всі категорії одного міста — паралельно
+                var categoryTasks = CategoryPaths.Select(async kvp =>
+                {
+                    var (categoryKey, categoryPath) = kvp;
+                    var localEvents = new List<ScrapedEvent>();
+                    string targetUrl = $"https://concert.ua/uk/catalog/{cityLower}/{categoryPath}";
 
-                using var page = await browser.NewPageAsync();
-                await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
-                await page.GoToAsync(item.Url, WaitUntilNavigation.Load);
-
-                var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
-                    const clean = (text) => text ? text.replace(/[\u00A0\t\r\n]+/g, ' ').replace(/\s\s+/g, ' ').trim() : '';
-                    const getTxt = (sel) => document.querySelector(sel)?.innerText || '';
-
-                    const categoryEl = document.querySelector('.event-main-info-tags__item');
-                    const category = clean(categoryEl?.innerText) || 'Подія';
-
-                    const imgEl = document.querySelector('picture.promo-events-slider-item__img img') 
-                               || document.querySelector('.event-page-top img') 
-                               || document.querySelector('img.promo-events-slider-item__img')
-                               || document.querySelector('meta[property=""og:image""]');
-                    
-                    let imageUrl = '';
-                    if (imgEl) {
-                        imageUrl = imgEl.tagName === 'META' ? imgEl.getAttribute('content') : imgEl.src;
+                    HttpResponseMessage response;
+                    try
+                    {
+                        response = await httpClient.GetAsync(targetUrl);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug("Помилка запиту {Url}: {Msg}", targetUrl, ex.Message);
+                        return localEvents;
                     }
 
-                    return {
-                        Description: clean(getTxt('.event-content__description, .common-text, [class*=""description""]')) || 'Опис на сайті',
-                        Date: clean(getTxt('.event-info__item--date, [class*=""date""]')),
-                        City: clean(getTxt('.event-info__item--place, [class*=""location""]')),
-                        Category: category,
-                        ImageUrl: imageUrl
-                    };
-                }");
+                    // 302/404 = немає подій цієї категорії в місті
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return localEvents;
+                    }
 
-                string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
+                    string htmlContent = await response.Content.ReadAsStringAsync();
+                    var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>", RegexOptions.IgnoreCase);
 
-                string rawCategory = details.GetProperty("Category").GetString()?.ToLower() ?? "інше";
-                string mappedCategory = rawCategory switch
+                    foreach (Match match in jsonLdRegex.Matches(htmlContent))
+                    {
+                        try
+                        {
+                            string jsonRaw = match.Groups[1].Value.Trim();
+                            using var doc = JsonDocument.Parse(jsonRaw);
+                            var root = doc.RootElement;
+
+                            var elementsToProcess = new List<JsonElement>();
+                            if (root.ValueKind == JsonValueKind.Array)
+                                elementsToProcess.AddRange(root.EnumerateArray());
+                            else if (root.ValueKind == JsonValueKind.Object)
+                                elementsToProcess.Add(root);
+
+                            foreach (var node in elementsToProcess)
+                            {
+                                if (!node.TryGetProperty("@type", out var typeProp) ||
+                                    !(typeProp.GetString()?.Contains("Event") ?? false))
+                                    continue;
+
+                                string title = node.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Без назви" : "Без назви";
+                                string url = node.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
+                                string imageUrl = node.TryGetProperty("image", out var imgProp) ? imgProp.GetString() ?? "" : "";
+                                string startDateRaw = node.TryGetProperty("startDate", out var startProp) ? startProp.GetString() ?? "" : "";
+                                string description = node.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "";
+                                
+                                if (string.IsNullOrWhiteSpace(description)) 
+                                    description = "Опис доступний на сайті за посиланням.";
+                                else
+                                    description = Regex.Replace(description, @"\s+", " ").Trim();
+
+                                if (string.IsNullOrEmpty(url)) continue;
+                                if (url.StartsWith("/")) url = "https://concert.ua" + url;
+
+                                // Надійний парсинг ISO дат з збереженням таймзони
+                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(2);
+                                string displayDate = startDateRaw;
+
+                                if (DateTimeOffset.TryParse(startDateRaw, out var parsedOffset))
+                                {
+                                    finalParsedDate = parsedOffset.DateTime;
+                                    displayDate = parsedOffset.ToString("dd.MM.yyyy HH:mm");
+                                }
+                                else if (DateTime.TryParse(startDateRaw, out var parsedNet))
+                                {
+                                    finalParsedDate = parsedNet;
+                                    displayDate = parsedNet.ToString("dd.MM.yyyy HH:mm");
+                                }
+
+                                var newEvent = new ScrapedEvent
+                                {
+                                    Title = title.Trim(),
+                                    Url = url.Trim(),
+                                    Source = ProviderName,
+                                    Description = description,
+                                    Date = displayDate,
+                                    ParsedDate = finalParsedDate,
+                                    // Фіксуємо чистий нижній регістр слага для Next.js фільтрів
+                                    City = cityLower,
+                                    CityUk = CityTranslations.GetValueOrDefault(cityLower, cityLower),
+                                    Category = categoryKey,
+                                    ImageUrl = imageUrl.Trim(),
+                                    ViewsCount = Random.Shared.Next(90, 280) // Виправлено назву поля згідно з моделлю
+                                };
+
+                                newEvent.GenerateDeterministicId();
+                                localEvents.Add(newEvent);
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            // Ігноруємо CollectionPage / BreadcrumbList
+                        }
+                    }
+
+                    return localEvents;
+                });
+
+                var results = await Task.WhenAll(categoryTasks);
+
+                int cityEventsCount = 0;
+                foreach (var ev in results.SelectMany(r => r))
                 {
-                    var c when c.Contains("театр") || c.Contains("комедія") || c.Contains("вистава") => "theatres",
-                    var c when c.Contains("концерт") || c.Contains("поп") || c.Contains("рок") || c.Contains("музика") => "concerts",
-                    var c when c.Contains("стендап") || c.Contains("stand-up") || c.Contains("гумор") => "stand-up",
-                    var c when c.Contains("дітям") || c.Contains("дитяч") => "child",
-                    var c when c.Contains("фестиваль") => "festivals",
-                    _ => "inshe"
-                };
-
-                string formattedCity = item.CitySlug.Substring(0, 1).ToUpper() + item.CitySlug.Substring(1).ToLower();
-
-                var newEvent = new ScrapedEvent
-                {
-                    Title = item.Title,
-                    Url = item.Url,
-                    Source = ProviderName,
-                    Description = details.GetProperty("Description").GetString() ?? "Опис відсутній",
-                    Date = rawDate,
-                    ParsedDate = DateParser.ParseUkrainianDate(rawDate) ?? DateTime.UtcNow.AddDays(2),
-                    City = formattedCity, // ВИПРАВЛЕНО: Записує "Uzhhorod" / "Rivne" замість "UZHHOROD"
-                    CityUk = CityTranslations.GetValueOrDefault(item.CitySlug.ToLower(), formattedCity),
-                    Category = mappedCategory,
-                    ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "",
-                    ViewsCount = Random.Shared.Next(80, 290) // Заповнюємо поле переглядів згідно з моделлю
-                };
-
-                newEvent.GenerateDeterministicId();
-                
-                lock (allCollectedEvents)
-                {
-                    allCollectedEvents.Add(newEvent);
+                    lock (allCollectedEvents)
+                    {
+                        if (!allCollectedEvents.Any(e => e.Url == ev.Url))
+                        {
+                            allCollectedEvents.Add(ev);
+                            cityEventsCount++;
+                        }
+                    }
                 }
 
-                _logger.LogInformation("✅ Concert.ua: {Title} [{City}] -> {Category}", newEvent.Title, newEvent.City, newEvent.Category);
-                await Task.Delay(Random.Shared.Next(300, 700));
+                if (cityEventsCount > 0)
+                    _logger.LogInformation("✅ Concert.ua: Отримано {Count} подій для міста {City}", cityEventsCount, cityLower.ToUpper());
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("⚠️ Пропущено {Url}: {Msg}", item.Url, ex.Message);
+                _logger.LogError("❌ Помилка збору міста {City}: {Message}", cityLower, ex.Message);
             }
             finally
             {
@@ -174,7 +223,26 @@ public class ConcertUaScraper : IEventScraper
             }
         });
 
-        await Task.WhenAll(tasks);
+        await Task.WhenAll(cityTasks);
+
+        _logger.LogInformation("🏁 Concert.ua: Збір завершено. Фінальний звіт провайдера:");
+        _logger.LogInformation("=================================================");
+
+        var statsByCity = allCollectedEvents.GroupBy(e => e.CityUk).OrderByDescending(g => g.Count());
+        _logger.LogInformation("📌 Розподіл за МІСТАМИ:");
+        foreach (var group in statsByCity)
+            _logger.LogInformation("    📍 {City}: {Count} подій", group.Key, group.Count());
+
+        _logger.LogInformation("-------------------------------------------------");
+
+        var statsByCategory = allCollectedEvents.GroupBy(e => e.Category).OrderByDescending(g => g.Count());
+        _logger.LogInformation("📌 Розподіл за КАТЕГОРІЯМИ:");
+        foreach (var group in statsByCategory)
+            _logger.LogInformation("    🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
+
+        _logger.LogInformation("=================================================");
+        _logger.LogInformation("🏁 Concert.ua: Всього знайдено унікальних подій: {Count}", allCollectedEvents.Count);
+
         return allCollectedEvents;
     }
 }
