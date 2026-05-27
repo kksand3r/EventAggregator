@@ -1,4 +1,6 @@
-﻿using Elastic.Clients.Elasticsearch;
+﻿using System.Text;
+using Elastic.Clients.Elasticsearch;
+using Elastic.Clients.Elasticsearch.QueryDsl;
 using EventAggregator.Domain.Interfaces;
 using EventAggregator.Domain.Models;
 using Microsoft.Extensions.Logging;
@@ -27,12 +29,16 @@ public class ElasticEventRepository : IEventRepository
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
-                        .Text(t => t.Title, g => g.Analyzer("ukrainian")) 
-                        .Text(t => t.Description, g => g.Analyzer("ukrainian")) 
-                        .Keyword(k => k.Category) // 🌟 Спрощено: чистий Keyword
-                        .Keyword(k => k.City)     // 🌟 Чистий Keyword
-                        .Text(t => t.CityUk, g => g.Analyzer("ukrainian"))
-                        .Date(d => d.ParsedDate)  // 🌟 Поле дати для правильного сортування
+                    .Text(t => t.Category, g => g
+                        .Analyzer("ukrainian")
+                        .Fields(f => f
+                            .Keyword("keyword") 
+                        )
+                    )
+                    .Keyword(k => k.City)
+                    .Text(t => t.CityUk, t => t.Analyzer("ukrainian"))
+                    .Text(t => t.Title)
+                    .Text(t => t.Description)
                 )
             ), ct);
     }
@@ -44,7 +50,7 @@ public class ElasticEventRepository : IEventRepository
 
         var response = await _client.BulkAsync(b => b
                 .Index(IndexName)
-                .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id))
+                .IndexMany(eventsList, (descriptor, sEvent) => descriptor.Id(sEvent.Id)) 
             , ct);
 
         if (response.IsValidResponse)
