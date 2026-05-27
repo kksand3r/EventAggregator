@@ -1,12 +1,12 @@
 ﻿"use client";
 
-import {useState, useEffect, useCallback} from "react";
-import {useSearchParams, useRouter} from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 
-export type Tab = "featured" | "catalog" | "timeline" | "stats" | "archive";
+export type Tab = "featured" | "catalog" | "timeline" | "stats";
 export type SearchMode = 'ai' | 'classic';
 
-const VALID_TABS: Tab[] = ["featured", "catalog", "timeline", "stats", "archive"];
+const VALID_TABS: Tab[] = ["featured", "catalog", "timeline", "stats"];
 
 export function useEventFilters() {
     const searchParams = useSearchParams();
@@ -38,7 +38,7 @@ export function useEventFilters() {
             }
         });
         const query = params.toString();
-        router.push(query ? `/?${query}` : "/", {scroll: false});
+        router.push(query ? `/?${query}` : "/", { scroll: false });
     }, [searchParams, router]);
 
     useEffect(() => {
@@ -48,34 +48,37 @@ export function useEventFilters() {
         setCurrentPage(pageParam);
     }, [tabParam, catParam, cityParam, pageParam]);
 
+    // ОНОВЛЕНО: Тепер фільтри та пошук скидаються при переході на будь-яку вкладку
     const handleTabChange = useCallback((tabId: Tab) => {
         setActiveTab(tabId);
         setSearch("");
+        setSearchMode("ai");
+        setSelectedCategory("All");
+        setSelectedCity("All");
+        setCurrentPage(1);
+
         if (tabId === "featured") {
-            setSelectedCategory("All");
-            setSelectedCity("All");
-            setCurrentPage(1);
-            updateQueryParams({tab: null, category: null, city: null, page: null});
+            updateQueryParams({ tab: null, category: null, city: null, page: null });
         } else {
-            updateQueryParams({tab: tabId});
+            updateQueryParams({ tab: tabId, category: null, city: null, page: null });
         }
     }, [updateQueryParams]);
 
     const handleCategoryChange = useCallback((cat: string) => {
         setSelectedCategory(cat);
         setCurrentPage(1);
-        updateQueryParams({category: cat, page: 1});
+        updateQueryParams({ category: cat, page: 1 });
     }, [updateQueryParams]);
 
     const handleCityChange = useCallback((city: string) => {
         setSelectedCity(city);
         setCurrentPage(1);
-        updateQueryParams({city: city, page: 1});
+        updateQueryParams({ city: city, page: 1 });
     }, [updateQueryParams]);
 
     const handlePageChange = useCallback((page: number) => {
         setCurrentPage(page);
-        updateQueryParams({page});
+        updateQueryParams({ page });
     }, [updateQueryParams]);
 
     const resetToHome = useCallback(() => handleTabChange("featured"), [handleTabChange]);
@@ -84,7 +87,7 @@ export function useEventFilters() {
         setSelectedCategory("All");
         setSelectedCity("All");
         setCurrentPage(1);
-        updateQueryParams({category: null, city: null, page: 1});
+        updateQueryParams({ category: null, city: null, page: 1 });
     }, [updateQueryParams]);
 
     return {
