@@ -131,9 +131,11 @@ export default function SearchBar({
     };
 
     useEffect(() => {
+        // ВИПРАВЛЕНО: Додано setIsLoading(false), щоб лоадер зникав, коли текст стерто
         if (searchMode !== 'ai' || localValue.trim().length < 3) {
             setAiResponse({ agentMessage: "", events: [] });
             setShowDropdown(false);
+            setIsLoading(false); // <--- Ось цей рядок вирішує проблему
             return;
         }
 
