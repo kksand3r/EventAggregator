@@ -13,71 +13,116 @@ interface SearchBarProps {
     placeholder?: string;
 }
 
+// Заміни весь RenderAiDropdownMessage і частину дропдауну на це:
+
 function RenderAiDropdownMessage({ text }: { text: string }) {
     if (!text) return null;
 
-    const regex = /\[([^\]]+)\]\(([^)]+)\)/;
-    const lines = text.split('\n');
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-    const introText: string[] = [];
-    const eventLinks: { text: string; url: string }[] = [];
-    const outroText: string[] = [];
+    const mainResults: { title: string; date: string; url: string }[] = [];
+    const additionalResults: { title: string; date: string; url: string }[] = [];
+    let currentSection: 'main' | 'additional' = 'main';
+    let introText: string[] = [];
+
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/;
 
     lines.forEach(line => {
-        let cleanLine = line.replace(/^\s*([\*\-]|(\d+\.))\s+/, "").trim();
-        if (!cleanLine) return;
+        // Визначаємо секцію
+        if (line.toLowerCase().includes('додаткові результати') ||
+            line.toLowerCase().includes('інші події') ||
+            line.toLowerCase().includes('більше подій')) {
+            currentSection = 'additional';
+            return;
+        }
 
-        const match = regex.exec(cleanLine);
-
+        const match = linkRegex.exec(line);
         if (match) {
-            eventLinks.push({ text: match[1], url: match[2] });
-        } else if (eventLinks.length === 0) {
-            introText.push(cleanLine);
-        } else {
-            outroText.push(cleanLine);
+            const fullText = match[1].trim();
+            const url = match[2];
+
+            // Розділяємо назву і дату
+            const [title, ...dateParts] = fullText.split(/\s*-\s*/);
+            const date = dateParts.join(' - ');
+
+            const result = { title, date, url };
+
+            if (currentSection === 'additional') {
+                additionalResults.push(result);
+            } else {
+                mainResults.push(result);
+            }
+        } else if (mainResults.length === 0 && additionalResults.length === 0) {
+            introText.push(line);
         }
     });
 
     return (
-        <div className="space-y-3.5">
+        <div className="space-y-5">
+            {/* Вступний текст */}
             {introText.length > 0 && (
-                <p className="text-sm text-[#1a1535]/80 font-medium leading-relaxed whitespace-pre-line">
-                    {introText.join('\n')}
+                <p className="text-sm text-[#1a1535]/80 leading-relaxed">
+                    {introText.join(' ')}
                 </p>
             )}
 
-            {eventLinks.length > 0 && (
-                <div className="grid grid-cols-1 gap-2 max-h-[240px] overflow-y-auto pr-1 custom-scrollbar">
-                    {eventLinks.map((link, idx) => {
-                        const [title, date] = link.text.split(/\s+-\s+/);
-
-                        return (
-                            <Link
-                                key={idx}
-                                href={link.url}
-                                className="group flex items-center justify-between p-3 rounded-xl bg-white border border-[#7c4dff]/10 hover:border-[#7c4dff]/40 hover:bg-[#7c4dff]/5 transition-all duration-200 shadow-[0_2px_8px_rgba(124,77,255,0.02)]"
-                            >
-                                <div className="flex flex-col gap-0.5 max-w-[90%]">
-                                    <span className="text-xs font-bold text-[#1a1535] group-hover:text-[#7c4dff] transition-colors line-clamp-1">
-                                        {title}
+            {/* Основні результати (картки як на скріншоті) */}
+            {mainResults.length > 0 && (
+                <div className="space-y-3">
+                    {mainResults.map((event, idx) => (
+                        <Link
+                            key={idx}
+                            href={event.url}
+                            className="group flex items-center justify-between bg-white border border-[#e0d9ff] hover:border-[#7c4dff]/30 rounded-2xl p-4 transition-all hover:shadow-md"
+                        >
+                            <div className="flex flex-col">
+                                <span className="font-semibold text-[#1a1535] group-hover:text-[#7c4dff] transition-colors">
+                                    {event.title}
+                                </span>
+                                {event.date && (
+                                    <span className="text-sm text-slate-500 flex items-center gap-1.5 mt-1">
+                                        📅 {event.date}
                                     </span>
-                                    {date && (
-                                        <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
-                                            <Calendar className="w-3 h-3 text-[#7c4dff]/60" /> {date}
-                                        </span>
-                                    )}
-                                </div>
-                                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-[#7c4dff] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all shrink-0" />
-                            </Link>
-                        );
-                    })}
+                                )}
+                            </div>
+                            <ArrowUpRight className="w-5 h-5 text-slate-400 group-hover:text-[#7c4dff] transition-colors" />
+                        </Link>
+                    ))}
                 </div>
             )}
 
-            {outroText.length > 0 && (
-                <p className="text-xs text-slate-500 font-medium pt-2 border-t border-slate-100 whitespace-pre-line">
-                    {outroText.join('\n')}
-                </p>
+            {/* Додаткові результати */}
+            {additionalResults.length > 0 && (
+                <div>
+                    <div className="flex items-center gap-2 mb-3 px-1">
+                        <Sparkles className="w-4 h-4 text-[#7c4dff]" />
+                        <span className="uppercase text-xs font-bold tracking-widest text-[#7c4dff]">
+                            Додаткові результати
+                        </span>
+                    </div>
+
+                    <div className="space-y-2">
+                        {additionalResults.map((event, idx) => (
+                            <Link
+                                key={idx}
+                                href={event.url}
+                                className="flex items-center justify-between p-4 rounded-2xl hover:bg-[#f8f4ff] border border-transparent hover:border-[#e0d9ff] transition-all group"
+                            >
+                                <div className="flex-1">
+                                    <div className="font-medium text-[#1a1535] group-hover:text-[#7c4dff]">
+                                        {event.title}
+                                    </div>
+                                    {event.date && (
+                                        <div className="text-xs text-slate-500 mt-0.5">
+                                            {event.date}
+                                        </div>
+                                    )}
+                                </div>
+                                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-[#7c4dff]" />
+                            </Link>
+                        ))}
+                    </div>
+                </div>
             )}
         </div>
     );
