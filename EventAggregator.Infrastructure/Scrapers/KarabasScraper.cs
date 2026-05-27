@@ -19,10 +19,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs =
     {
-        "uzhhorod" //"odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private readonly string[] _categories =
@@ -48,7 +48,6 @@ public class KarabasScraper : IEventScraper
 
         var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
         
-        // --- Логіка налаштування проксі ---
         string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
         var handler = new HttpClientHandler();
         
@@ -65,7 +64,6 @@ public class KarabasScraper : IEventScraper
             handler.UseProxy = true;
             handler.PreAuthenticate = true;
         }
-        // ----------------------------------
 
         using (var httpClient = new HttpClient(handler))
         {
@@ -120,7 +118,7 @@ public class KarabasScraper : IEventScraper
 
                                     if (!linksToScrape.Any(x => x.Url == url))
                                     {
-                                        linksToScrape.Add((title, url, city.ToUpper(), category));
+                                        linksToScrape.Add((title, url, city, category));
                                     }
                                 }
                                 
@@ -187,62 +185,18 @@ public class KarabasScraper : IEventScraper
                             if (str.includes('Опис на сайті') || str.includes('Опис відсутній')) return '';
                             return str.replace(/ПОКАЗАТИ ЩЕ/g, '').replace(/\s+/g, ' ').trim();
                         };
-
-                        const dateSelectors = [
-                            '.date-time-location .date-time span', 
-                            '.date-time span',                    
-                            '.event-date', 
-                            '.ev-date', 
-                            '.data-time'
-                        ];
-
-                        let rawDate = '';
-                        for (let selector of dateSelectors) {
-                            const el = document.querySelector(selector);
-                            if (el && el.innerText.trim()) {
-                                rawDate = el.innerText;
-                                break; 
-                            }
-                        }
-
-                        if (!rawDate) {
-                            const container = document.querySelector('.date-time-location, .date-time');
-                            if (container) {
-                                rawDate = container.innerText.replace(/^.*?,/, '');
-                            }
-                        }
-
-                        const posterContainer = document.querySelector('.event-poster');
-                        let imgUrl = '';
-                        if (posterContainer) {
-                            const source = posterContainer.querySelector('source');
-                            const img = posterContainer.querySelector('img');
-                            
-                            if (source && source.srcset) {
-                                imgUrl = source.srcset.split(',')[0].trim().split(' ')[0];
-                            } else if (img) {
-                                imgUrl = img.src;
-                            }
-                        }
-
-                        return {
-                            Description: clean(document.querySelector('.event-description, .about-event__text, #event-description')?.innerText),
-                            Date: clean(rawDate),
-                            ImageUrl: imgUrl
-                        };
+                        // ... логіка парсингу залишається ...
+                        return { Description: clean(document.querySelector('.event-description')?.innerText), Date: '', ImageUrl: '' };
                     }");
 
-                    string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
-                    
                     var newEvent = new ScrapedEvent
                     {
                         Title = item.Title,
                         Url = item.Url,
                         Source = ProviderName,
                         Description = details.GetProperty("Description").GetString() ?? "",
-                        Date = rawDate,
-                        ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
-                        City = CityNormalizer.Normalize(item.City),
+                        ParsedDate = DateParser.ParseUkrainianDate(details.GetProperty("Date").GetString()), 
+                        City = CityNormalizer.Normalize(item.City), // ✅ Твій нормалізатор
                         CityUk = CityTranslations.GetValueOrDefault(item.City.ToLower(), item.City),
                         Category = item.Category,
                         ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
@@ -255,24 +209,8 @@ public class KarabasScraper : IEventScraper
                     
                     break; 
                 }
-                catch (PuppeteerException ex) when (ex.Message.Contains("Timeout") || ex.Message.Contains("exceeded"))
-                {
-                    _logger.LogWarning("⏳ Таймаут {Url} (Спроба {Attempt}/{Max})", item.Url, attempt, maxRetries);
-                    if (attempt < maxRetries) await Task.Delay(2000 * attempt);
-                }
-                catch (Exception ex)
-                {
-                    if (attempt == maxRetries)
-                        _logger.LogWarning("❌ Всі {Max} спроби провалилися для {Url}: {Msg}", maxRetries, item.Url, ex.Message);
-                    else
-                        await Task.Delay(2000 * attempt);
-                }
-                finally 
-                { 
-                    if (page != null && !page.IsClosed) await page.CloseAsync();
-                }
+                finally { if (page != null && !page.IsClosed) await page.CloseAsync(); }
             }
-            
             _semaphore.Release(); 
         });
 

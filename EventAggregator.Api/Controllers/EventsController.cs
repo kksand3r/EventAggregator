@@ -186,8 +186,7 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // ✅ СТАЛО: Шукаємо точний збіг без примусового регістру.
-            // Якщо прийшло "Uzhhorod", шукаємо "Uzhhorod".
+            // ✅ Шукаємо точний збіг (напр. "Uzhhorod"), який приходить з фронтенду
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
                 filters.Add(f => f.Term(t => t.Field("city").Value(city)));
 
@@ -202,11 +201,7 @@ namespace EventAggregator.Api.Controllers
             );
 
             return response.IsValidResponse
-                ? Ok(new
-                {
-                    Total = response.Total, Page = page, PageSize = pageSize,
-                    Data = response.Documents.Select(d => d.ToDto())
-                })
+                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) })
                 : StatusCode(500, response.DebugInformation);
         }
 
