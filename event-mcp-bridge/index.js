@@ -113,11 +113,19 @@ app.post('/api/mcp-search', async (req, res) => {
         if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
 
         const mcpTools = await mcpClient.listTools();
-        const functionDeclarations = mcpTools.tools.map(tool => ({
-            name: tool.name,
-            description: tool.description,
-            parameters: cleanSchema(tool.inputSchema)
-        }));
+
+        // ✅ Залишаємо тільки інструмент пошуку — прибираємо list_indices, get_mappings тощо
+        // Gemini витрачав всі ітерації на "розвідку" замість реального пошуку
+        const ALLOWED_TOOLS = ['search'];
+        const functionDeclarations = mcpTools.tools
+            .filter(tool => ALLOWED_TOOLS.includes(tool.name))
+            .map(tool => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: cleanSchema(tool.inputSchema)
+            }));
+
+        console.log(`  ↳ Available tools: [${functionDeclarations.map(t => t.name).join(', ')}]`);
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -129,22 +137,28 @@ app.post('/api/mcp-search', async (req, res) => {
                 role: "user",
                 parts: [{ text: `
 [request_id: ${requestId}]
-Ти — розумний ШІ-асистент платформи EventSpace. Користувач шукає події за запитом: "${query}".
+Ти — ШІ-асистент платформи EventSpace. Користувач шукає події за запитом: "${query}".
 
-СУВОРІ ПРАВИЛА:
-1. Ти ЗОБОВ'ЯЗАНИЙ викликати інструмент пошуку в Elasticsearch для КОЖНОГО запиту.
-2. Використовуй простий повнотекстовий запит (match або multi_match).
-3. НЕ перекладай назви міст чи категорій — передавай слова українською мовою.
-4. Шукай місто за полем "cityUk", категорію — за "category", "title", "description".
-5. Сортуй результати за "parsedDate" у порядку "asc".
-6. У фінальній відповіді виведи ВСІ знайдені події у форматі Markdown: [Назва - Дата](/events/ID).
+СТРУКТУРА ІНДЕКСУ "events" В ELASTICSEARCH:
+- cityUk: назва міста українською (наприклад: "Рівне", "Київ", "Львів")
+- category: категорія події (наприклад: "концерт", "виставка")
+- title: назва події
+- description: опис події
+- parsedDate: дата події (формат ISO)
+
+СУВОРІ ПРАВИЛА — виконай їх точно:
+1. Відразу викликай інструмент "search" з індексом "events". НЕ викликай list_indices або get_mappings.
+2. Використовуй multi_match по полях ["title", "description", "category"] для пошуку теми.
+3. Якщо у запиті є місто — додай match по полю "cityUk" з назвою міста українською.
+4. Сортуй за parsedDate asc.
+5. Виведи знайдені події списком у форматі: [Назва - Дата](/events/ID).
         ` }]
             }
         ];
 
         let lastMcpData = [];
         let loopCount = 0;
-        const MAX_LOOPS = 4;
+        const MAX_LOOPS = 6; // ✅ Збільшено: потрібно місце для search + фінальна відповідь
         let toolWasCalled = false; // ✅ ФІХ 3: Відстежуємо чи інструмент взагалі викликався
 
         while (loopCount < MAX_LOOPS) {
@@ -198,14 +212,20 @@ app.post('/api/mcp-search', async (req, res) => {
 
                     const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
                     if (toolTextContent) {
-                        lastMcpData = [{ text: toolTextContent }];
-                        // ✅ ФІХ 6: Логуємо скільки результатів повернув Elastic
+                        // ✅ Elastic MCP повертає текст виду "Results: {...}" або просто JSON
+                        // Витягуємо JSON з відповіді
+                        let jsonText = toolTextContent;
+                        const jsonMatch = toolTextContent.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) jsonText = jsonMatch[0];
+
+                        lastMcpData = [{ text: jsonText }];
+
                         try {
-                            const parsed = JSON.parse(toolTextContent);
+                            const parsed = JSON.parse(jsonText);
                             const hitsCount = parsed?.hits?.hits?.length ?? '?';
                             console.log(`  ↳ Elasticsearch returned ${hitsCount} hits`);
                         } catch {
-                            console.log(`  ↳ Elasticsearch returned raw text (not JSON)`);
+                            console.log(`  ↳ Elasticsearch raw response (first 200 chars): ${toolTextContent.substring(0, 200)}`);
                         }
                     }
 
