@@ -185,20 +185,79 @@ export default function SearchBar({
                 </div>
 
                 {/* ОНОВЛЕНО: pr-[145px] робить безпечний відступ, а text-ellipsis обрізає довгий текст завчасно */}
-                <input
-                    type="text"
-                    value={localValue}
-                    onChange={(e) => handleInputChange(e.target.value)}
-                    onFocus={() => {
-                        if (aiResponse.agentMessage || aiResponse.events.length > 0) setShowDropdown(true);
-                    }}
-                    placeholder={
-                        searchMode === 'ai'
-                            ? "Запитайте ШІ (наприклад: куди піти з дівчиною?)..."
-                            : "Пошук подій за назвою"
-                    }
-                    className="w-full h-[52px] pl-[46px] pr-[170px] rounded-[26px] border border-white/90 bg-white/70 backdrop-blur-[20px] text-[15px] font-medium text-[#1a1535] outline-none transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.04)] focus:shadow-[0_8px_24px_rgba(124,77,255,0.12)] focus:border-[#7c4dff]/30 focus:bg-white truncate select-text"
-                />
+                <div className="relative w-full flex items-center h-[52px] rounded-[26px] border border-white/90 bg-white/70 backdrop-blur-[20px] transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.04)] focus-within:shadow-[0_8px_24px_rgba(124,77,255,0.12)] focus-within:border-[#7c4dff]/30 focus-within:bg-white group">
+
+                    {/* Іконка зліва */}
+                    <div className="pl-4 pr-3 flex items-center justify-center pointer-events-none transition-transform group-focus-within:scale-110 group-focus-within:text-[#7c4dff]">
+                        {searchMode === 'ai' ? (
+                            <Sparkles className="w-[18px] h-[18px] text-[#7c4dff] transition-colors" />
+                        ) : (
+                            <Search className="w-[18px] h-[18px] text-[#1a1535] transition-colors" />
+                        )}
+                    </div>
+
+                    {/* Сам інпут (flex-1 змушує його зайняти рівно стільки місця, скільки залишилось ДО кнопок) */}
+                    <input
+                        type="text"
+                        value={localValue}
+                        onChange={(e) => handleInputChange(e.target.value)}
+                        onFocus={() => {
+                            if (aiResponse.agentMessage || aiResponse.events.length > 0) setShowDropdown(true);
+                        }}
+                        placeholder={
+                            searchMode === 'ai'
+                                ? "Запитайте ШІ (наприклад: куди піти з дівчиною?)..."
+                                : "Пошук подій за назвою"
+                        }
+                        className="flex-1 h-full bg-transparent text-[15px] font-medium text-[#1a1535] outline-none appearance-none placeholder:text-slate-400 truncate"
+                    />
+
+                    {/* Кнопки справа (shrink-0 забороняє їм стискатися) */}
+                    <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-full z-20 backdrop-blur-sm mr-2 shrink-0">
+                        {localValue && !isLoading && (
+                            <button
+                                onClick={clearInput}
+                                className="bg-transparent border-none cursor-pointer p-1.5 flex items-center text-slate-400 hover:text-slate-700 transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+
+                        {isLoading && (
+                            <div className="mx-2 flex items-center">
+                                <Loader2 className="animate-spin w-4 h-4 text-[#7c4dff]" />
+                            </div>
+                        )}
+
+                        <div className="flex items-center gap-0.5 bg-white rounded-full p-0.5 shadow-sm border border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => handleToggleMode('ai')}
+                                title="AI Пошук"
+                                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                    searchMode === 'ai'
+                                        ? "bg-[#7c4dff] text-white shadow-md shadow-[#7c4dff]/20"
+                                        : "bg-transparent text-slate-400 hover:text-[#5a4fa0] hover:bg-slate-50"
+                                }`}
+                            >
+                                <Sparkles className="w-4 h-4" />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => handleToggleMode('classic')}
+                                title="Класичний пошук"
+                                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                    searchMode === 'classic'
+                                        ? "bg-[#1a1535] text-white shadow-md shadow-[#1a1535]/20"
+                                        : "bg-transparent text-slate-400 hover:text-[#1a1535] hover:bg-slate-50"
+                                }`}
+                            >
+                                <List className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 <div className="absolute right-2 flex items-center gap-1 bg-slate-100/50 p-1 rounded-full z-20 backdrop-blur-sm">
                     {localValue && !isLoading && (
