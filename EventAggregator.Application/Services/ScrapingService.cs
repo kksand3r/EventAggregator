@@ -27,24 +27,50 @@ namespace EventAggregator.Application.Services
             await _repository.EnsureIndexCreatedAsync(ct);
 
             var allEvents = new List<ScrapedEvent>();
+            var random = new Random();
+            var scrapersList = _scrapers.ToList();
 
-            foreach (var scraper in _scrapers)
+            for (int i = 0; i < scrapersList.Count; i++)
             {
                 if (ct.IsCancellationRequested) break;
+
+                var scraper = scrapersList[i];
                 try
                 {
+                    _logger.LogInformation("⏳ Запуск скрапінгу для провайдера: {Provider}", scraper.ProviderName);
+                    
                     var results = await scraper.ScrapeAsync(browser);
                     allEvents.AddRange(results);
+                    
+                    _logger.LogInformation("✨ Провайдер {Provider} успішно зібрав {Count} подій.", scraper.ProviderName, results.Count);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Помилка скрапера {Provider}", scraper.ProviderName);
                 }
+
+                // Додаємо випадкову затримку між різними сайтами (крім останнього у списку)
+                if (i < scrapersList.Count - 1 && !ct.IsCancellationRequested)
+                {
+                    // Рандомний інтервал від 5000 мс (5 сек) до 12000 мс (12 сек)
+                    int delay = random.Next(5000, 12000);
+                    _logger.LogInformation("😴 Очікування {Delay} мс перед переходом до наступного сайту, щоб уникнути блокування по IP...", delay);
+                    
+                    try
+                    {
+                        await Task.Delay(delay, ct);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        _logger.LogWarning("⏱️ Очікування було перервано через скасування операції.");
+                        break;
+                    }
+                }
             }
 
             var uniqueEvents = allEvents.Distinct(EventEqualityComparer.Instance).ToList();
 
-            _logger.LogInformation("Зібрано: {Total}. Після очистки: {Unique}", allEvents.Count, uniqueEvents.Count);
+            _logger.LogInformation("📊 Підсумок сесії — Зібрано всього: {Total}. Унікальних після очистки: {Unique}", allEvents.Count, uniqueEvents.Count);
 
             await _repository.SaveEventsAsync(uniqueEvents, ct);
         }
