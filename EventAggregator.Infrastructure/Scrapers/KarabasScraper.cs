@@ -3,8 +3,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
-using EventAggregator.Domain.Parsing;
-using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 
@@ -14,8 +12,6 @@ public class KarabasScraper : IEventScraper
 {
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
-    
-    private readonly SemaphoreSlim _semaphore = new(2); 
 
     private readonly string[] _citySlugs =
     {
@@ -39,14 +35,17 @@ public class KarabasScraper : IEventScraper
         { "kropyvnytskyi", "Кропивницький" }
     };
 
+    // Регулярка для миттєвого вирізання прихованого блоку Google-структури (JSON-LD)
+    private static readonly Regex LdJsonRegex = new(
+        @"<script\s+type=""application/ld\+json"">\s*({.*?})\s*</script>", 
+        RegexOptions.Singleline | RegexOptions.Compiled | RegexOptions.IgnoreCase
+    );
+
     public KarabasScraper(ILogger<KarabasScraper> logger) => _logger = logger;
 
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
         var allEvents = new List<ScrapedEvent>();
-        if (browser.IsClosed) return allEvents;
-
-        var linksToScrape = new List<(string Title, string Url, string City, string Category)>();
         
         string proxyServer = Environment.GetEnvironmentVariable("ProxyServer");
         var handler = new HttpClientHandler();
@@ -67,7 +66,8 @@ public class KarabasScraper : IEventScraper
 
             foreach (var city in _citySlugs)
             {
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API)", city.ToUpper());
+                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через JSON-LD)", city.ToUpper());
+                var cityUk = CityTranslations.GetValueOrDefault(city.ToLower(), city);
 
                 foreach (var category in _categories)
                 {
@@ -76,8 +76,6 @@ public class KarabasScraper : IEventScraper
 
                     while (hasMorePages)
                     {
-                        if (browser.IsClosed) return allEvents; 
-
                         string targetUrl = $"https://{city}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
                         
                         try
@@ -97,29 +95,92 @@ public class KarabasScraper : IEventScraper
                             if (root.TryGetProperty("content", out var contentEl))
                             {
                                 string htmlContent = contentEl.GetString() ?? "";
-                                
-                                var regex = new Regex(@"<div[^>]*class\s*=\s*""[^""]*title-row[^""]*""[^>]*>\s*<a\s+href\s*=\s*""([^""]+)""[^>]*>([\s\S]*?)</a>", RegexOptions.IgnoreCase);
-                                var matches = regex.Matches(htmlContent);
+                                var matchedEventsInPage = 0;
 
-                                foreach (Match m in matches)
+                                // 🎯 ШУКАЄМО ЗОЛОТУ ЖИЛУ: Витягуємо JSON-LD блоки з HTML контенту сторінки
+                                var ldMatches = LdJsonRegex.Matches(htmlContent);
+                                foreach (Match match in ldMatches)
                                 {
-                                    var url = m.Groups[1].Value.Trim().Replace("\\/", "/");
-                                    var title = Regex.Replace(m.Groups[2].Value, "<.*?>", string.Empty).Trim().Replace("\n", " ");
-                                    
-                                    if (url.StartsWith("/")) url = "https://karabas.com" + url;
-
-                                    if (!linksToScrape.Any(x => x.Url == url))
+                                    try
                                     {
-                                        linksToScrape.Add((title, url, city.ToUpper(), category));
+                                        var jsonText = match.Groups[1].Value;
+                                        using var ldDoc = JsonDocument.Parse(jsonText);
+                                        var ldRoot = ldDoc.RootElement;
+
+                                        // Нам потрібна суто сторінка списку, яка містить структуру CollectionPage
+                                        if (!ldRoot.TryGetProperty("@type", out var typeProp) || typeProp.GetString() != "CollectionPage") 
+                                            continue;
+
+                                        if (ldRoot.TryGetProperty("mainEntity", out var mainEntity) &&
+                                            mainEntity.TryGetProperty("itemListElement", out var elements) &&
+                                            elements.ValueKind == JsonValueKind.Array)
+                                        {
+                                            foreach (var element in elements.EnumerateArray())
+                                            {
+                                                if (element.TryGetProperty("item", out var item))
+                                                {
+                                                    var title = item.TryGetProperty("name", out var n) ? n.GetString() : "";
+                                                    var url = item.TryGetProperty("url", out var u) ? u.GetString() : "";
+                                                    var startDateRaw = item.TryGetProperty("startDate", out var sd) ? sd.GetString() : "";
+
+                                                    if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(url)) 
+                                                    {
+                                                        continue;
+                                                    }
+
+                                                    if (url.StartsWith("/")) url = "https://karabas.com" + url;
+
+                                                    // 📅 Розбір дати з ISO 8601 ("2026-05-30T22:00:00+03:00")
+                                                    DateTime? parsedDate = null;
+                                                    string displayDate = startDateRaw;
+
+                                                    if (DateTime.TryParse(startDateRaw, out var dt))
+                                                    {
+                                                        parsedDate = dt.ToUniversalTime(); // UTC для Elasticsearch
+                                                        displayDate = dt.ToString("dd.MM.yyyy HH:mm"); // Гарний вигляд для фронта
+                                                    }
+
+                                                    var newEvent = new ScrapedEvent
+                                                    {
+                                                        Title = title.Trim().Replace("\n", " "),
+                                                        Url = url,
+                                                        Source = ProviderName,
+                                                        Description = "Опис доступний на сайті за посиланням.", // Фолбек
+                                                        Date = displayDate,
+                                                        ParsedDate = parsedDate,
+                                                        City = city.ToUpper(),
+                                                        CityUk = cityUk,
+                                                        Category = category,
+                                                        ImageUrl = "" // На рівні списку Карабас не дає постер у JSON-LD, залишаємо фолбек
+                                                    };
+
+                                                    newEvent.GenerateDeterministicId();
+
+                                                    lock (allEvents)
+                                                    {
+                                                        if (!allEvents.Any(x => x.Id == newEvent.Id))
+                                                        {
+                                                            allEvents.Add(newEvent);
+                                                            matchedEventsInPage++;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch (Exception ldEx)
+                                    {
+                                        _logger.LogDebug("Парсинг JSON-LD блоку пропущено: {Msg}", ldEx.Message);
                                     }
                                 }
-                                
-                                if (matches.Count > 0)
+
+                                if (matchedEventsInPage > 0)
                                 {
-                                    _logger.LogInformation("   Отримано {Count} подій з {Category} (Сторінка {Page})", matches.Count, category, page);
+                                    _logger.LogInformation("   ✅ Отримано {Count} чистих подій з {Category} (Сторінка {Page})", matchedEventsInPage, category, page);
                                 }
                             }
 
+                            // 🔄 ПЕРЕВІРКА ПАГІНАЦІЇ
                             hasMorePages = false;
                             if (root.TryGetProperty("pagination", out var pagEl))
                             {
@@ -128,7 +189,7 @@ public class KarabasScraper : IEventScraper
                                 {
                                     hasMorePages = true;
                                     page++;
-                                    await Task.Delay(Random.Shared.Next(800, 1500)); 
+                                    await Task.Delay(Random.Shared.Next(300, 700)); // Легка пауза, щоб не нахабніти
                                 }
                             }
                         }
@@ -139,135 +200,12 @@ public class KarabasScraper : IEventScraper
                         }
                     }
                     
-                    await Task.Delay(Random.Shared.Next(1000, 2000));
+                    await Task.Delay(Random.Shared.Next(400, 800));
                 }
             }
         }
 
-        _logger.LogInformation("🚀 Karabas: Глибокий збір деталей для {Count} подій через Puppeteer...", linksToScrape.Count);
-        
-        var tasks = linksToScrape.Select(async item =>
-        {
-            await _semaphore.WaitAsync();
-            IPage page = null;
-            
-            await Task.Delay(Random.Shared.Next(500, 1500)); 
-
-            int maxRetries = 3; 
-            
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
-            {
-                try
-                {
-                    if (browser.IsClosed) return;
-
-                    page = await browser.NewPageAsync();
-                    page.DefaultNavigationTimeout = 60000;
-                    page.DefaultTimeout = 60000;
-
-                    await page.GoToAsync(item.Url, new NavigationOptions 
-                    { 
-                        WaitUntil = new[] { WaitUntilNavigation.Load }, 
-                        Timeout = 60000 
-                    });
-
-                    var details = await page.EvaluateFunctionAsync<JsonElement>(@"() => {
-                        const clean = (str) => {
-                            if (!str) return '';
-                            if (str.includes('Опис на сайті') || str.includes('Опис відсутній')) return '';
-                            return str.replace(/ПОКАЗАТИ ЩЕ/g, '').replace(/\s+/g, ' ').trim();
-                        };
-
-                        const dateSelectors = [
-                            '.date-time-location .date-time span', 
-                            '.date-time span',                     
-                            '.event-date', 
-                            '.ev-date', 
-                            '.data-time'
-                        ];
-
-                        let rawDate = '';
-                        for (let selector of dateSelectors) {
-                            const el = document.querySelector(selector);
-                            if (el && el.innerText.trim()) {
-                                rawDate = el.innerText;
-                                break; 
-                            }
-                        }
-
-                        if (!rawDate) {
-                            const container = document.querySelector('.date-time-location, .date-time');
-                            if (container) {
-                                rawDate = container.innerText.replace(/^.*?,/, '');
-                            }
-                        }
-
-                        const posterContainer = document.querySelector('.event-poster');
-                        let imgUrl = '';
-                        if (posterContainer) {
-                            const source = posterContainer.querySelector('source');
-                            const img = posterContainer.querySelector('img');
-                            
-                            if (source && source.srcset) {
-                                imgUrl = source.srcset.split(',')[0].trim().split(' ')[0];
-                            } else if (img) {
-                                imgUrl = img.src;
-                            }
-                        }
-
-                        return {
-                            Description: clean(document.querySelector('.event-description, .about-event__text, #event-description')?.innerText),
-                            Date: clean(rawDate),
-                            ImageUrl: imgUrl
-                        };
-                    }");
-
-                    string rawDate = details.GetProperty("Date").GetString() ?? string.Empty;
-                    
-                    var newEvent = new ScrapedEvent
-                    {
-                        Title = item.Title,
-                        Url = item.Url,
-                        Source = ProviderName,
-                        Description = details.GetProperty("Description").GetString() ?? "",
-                        Date = rawDate,
-                        ParsedDate = DateParser.ParseUkrainianDate(rawDate), 
-                        City = CityNormalizer.Normalize(item.City),
-                        CityUk = CityTranslations.GetValueOrDefault(item.City.ToLower(), item.City),
-                        Category = item.Category,
-                        ImageUrl = details.GetProperty("ImageUrl").GetString() ?? "" 
-                    };
-
-                    newEvent.GenerateDeterministicId();
-                    
-                    lock (allEvents) { allEvents.Add(newEvent); }
-                    _logger.LogInformation("✅ Karabas: {Title} [{City}]", newEvent.Title, newEvent.City);
-                    
-                    break; 
-                    
-                }
-                catch (PuppeteerException ex) when (ex.Message.Contains("Timeout") || ex.Message.Contains("exceeded"))
-                {
-                    _logger.LogWarning("⏳ Таймаут {Url} (Спроба {Attempt}/{Max})", item.Url, attempt, maxRetries);
-                    if (attempt < maxRetries) await Task.Delay(2000 * attempt);
-                }
-                catch (Exception ex)
-                {
-                    if (attempt == maxRetries)
-                        _logger.LogWarning("❌ Всі {Max} спроби провалилися для {Url}: {Msg}", maxRetries, item.Url, ex.Message);
-                    else
-                        await Task.Delay(2000 * attempt);
-                }
-                finally 
-                { 
-                    if (page != null && !page.IsClosed) await page.CloseAsync();
-                }
-            }
-            
-            _semaphore.Release(); 
-        });
-
-        await Task.WhenAll(tasks);
+        _logger.LogInformation("🏁 Karabas.com: Скрайпінг успішно завершено! Знайдено унікальних подій: {Count}", allEvents.Count);
         return allEvents;
     }
 }
