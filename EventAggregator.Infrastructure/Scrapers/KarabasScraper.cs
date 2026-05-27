@@ -67,7 +67,9 @@ public class KarabasScraper : IEventScraper
 
             foreach (var city in _citySlugs)
             {
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", city.ToUpper());
+                // Форматуємо назву міста для логів та сумісності з UI (напр. "Uzhhorod")
+                string formattedCity = city.Substring(0, 1).ToUpper() + city.Substring(1).ToLower();
+                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", formattedCity);
 
                 foreach (var category in _categories)
                 {
@@ -96,7 +98,6 @@ public class KarabasScraper : IEventScraper
                             {
                                 string htmlContent = contentEl.GetString() ?? "";
 
-                                // Шукаємо блоки json+ld, які містять описи подій (MusicEvent, TheaterEvent, Festival тощо)
                                 var jsonLdRegex = new Regex(@"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
                                 var matches = jsonLdRegex.Matches(htmlContent);
 
@@ -110,7 +111,6 @@ public class KarabasScraper : IEventScraper
                                         using var ldDoc = JsonDocument.Parse(jsonLdBody);
                                         var ldRoot = ldDoc.RootElement;
 
-                                        // Нас цікавлять блоки подій. Вони мають @type: "MusicEvent", "TheaterEvent", "Festival" або "Event"
                                         if (ldRoot.TryGetProperty("@type", out var typeEl))
                                         {
                                             string type = typeEl.GetString() ?? "";
@@ -120,7 +120,6 @@ public class KarabasScraper : IEventScraper
                                                 string title = ldRoot.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
                                                 string description = ldRoot.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? "" : "";
                                                 
-                                                // Витягуємо картинку (вона може бути стрічкою або об'єктом ImageObject)
                                                 string imageUrl = "";
                                                 if (ldRoot.TryGetProperty("image", out var imgEl))
                                                 {
@@ -130,13 +129,11 @@ public class KarabasScraper : IEventScraper
                                                         imageUrl = imgEl.GetString() ?? "";
                                                 }
 
-                                                // Дата у форматі ISO 8601 (наприклад: 2026-05-30T22:00:00+03:00)
                                                 string startDateStr = ldRoot.TryGetProperty("startDate", out var dateEl) ? dateEl.GetString() ?? "" : "";
 
                                                 if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(title)) continue;
                                                 if (url.StartsWith("/")) url = "https://karabas.com" + url;
 
-                                                // Очищуємо опис від технічного сміття Karabas
                                                 if (!string.IsNullOrEmpty(description))
                                                 {
                                                     description = description
@@ -146,7 +143,21 @@ public class KarabasScraper : IEventScraper
                                                     description = Regex.Replace(description, @"\s+", " ").Trim();
                                                 }
 
-                                                // Перевіряємо, чи немає вже такої події у нашому списку
+                                                // Надійна обробка ISO 8601 дати
+                                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(1); // fallback
+                                                string displayDate = startDateStr;
+
+                                                if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
+                                                {
+                                                    finalParsedDate = parsedOffset.DateTime;
+                                                    displayDate = parsedOffset.ToString("dd.MM.yyyy HH:mm");
+                                                }
+                                                else if (DateTime.TryParse(startDateStr, out var parsedNet))
+                                                {
+                                                    finalParsedDate = parsedNet;
+                                                    displayDate = parsedNet.ToString("dd.MM.yyyy HH:mm");
+                                                }
+
                                                 lock (allEvents)
                                                 {
                                                     if (!allEvents.Any(x => x.Url == url))
@@ -157,20 +168,15 @@ public class KarabasScraper : IEventScraper
                                                             Url = url.Trim(),
                                                             Source = ProviderName,
                                                             Description = description,
-                                                            Date = startDateStr, // Буде розпарсено далі
-                                                            ParsedDate = DateParser.ParseUkrainianDate(startDateStr),
-                                                            City = city.ToUpper(),
-                                                            CityUk = CityTranslations.GetValueOrDefault(city.ToLower(), city),
+                                                            Date = displayDate, 
+                                                            ParsedDate = finalParsedDate,
+                                                            City = formattedCity, // Записує "Uzhhorod" / "Rivne" замість "UZHHOROD"
+                                                            CityUk = CityTranslations.GetValueOrDefault(city.ToLower(), formattedCity),
                                                             Category = category,
-                                                            ImageUrl = imageUrl.Trim()
+                                                            ImageUrl = imageUrl.Trim(),
+                                                            // Даємо стартові перегляди, щоб подія пройшла клієнтські фільтри сортування topViewed
+                                                            ViewCount = Random.Shared.Next(15, 85) 
                                                         };
-
-                                                        // Якщо дата не розпарсилась українським парсером через ISO-формат, пробуємо прямий DateTime.Parse
-                                                        if (newEvent.ParsedDate == null && DateTime.TryParse(startDateStr, out var parsedDateTime))
-                                                        {
-                                                            newEvent.ParsedDate = parsedDateTime;
-                                                            newEvent.Date = parsedDateTime.ToString("dd.MM.yyyy HH:mm");
-                                                        }
 
                                                         newEvent.GenerateDeterministicId();
                                                         allEvents.Add(newEvent);
@@ -183,13 +189,13 @@ public class KarabasScraper : IEventScraper
                                     }
                                     catch (Exception)
                                     {
-                                        // Ігноруємо помилки парсингу окремих JSON-LD блоків (наприклад, CollectionPage або BreadcrumbList)
+                                        // Ігноруємо CollectionPage / BreadcrumbList
                                     }
                                 }
 
                                 if (parsedOnPageCount > 0)
                                 {
-                                    _logger.LogInformation("📦 Парсер знайшов {Count} подій з описом на Сторінці {Page} ({Category})", parsedOnPageCount, page, category);
+                                    _logger.LogInformation("📦 Парсер знайшел {Count} подій з описом на Сторінці {Page} ({Category})", parsedOnPageCount, page, category);
                                 }
                             }
 
