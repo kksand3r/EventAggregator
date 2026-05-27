@@ -170,7 +170,7 @@ namespace EventAggregator.Api.Controllers
             var summary = await gemini.SummarizeEventAsync(response.Source.Title, response.Source.Description);
             return Ok(new { Summary = summary });
         }
-
+        
         [HttpGet]
         public async Task<IActionResult> GetAll(
             [FromQuery] string? city,
@@ -186,7 +186,8 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // ✅ Фільтр по місту: очікуємо точний збіг (напр. "Uzhhorod")
+            // ✅ Тепер очікуємо точний збіг (наприклад, "Uzhhorod"), 
+            // який приходить з фронтенду (через metadata) і лежить у базі.
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
                 filters.Add(f => f.Term(t => t.Field("city").Value(city)));
 
