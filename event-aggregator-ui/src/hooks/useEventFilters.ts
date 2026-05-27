@@ -16,8 +16,8 @@ export function useEventFilters() {
     const tabParam = searchParams.get("tab") as Tab | null;
     const catParam = searchParams.get("category") || "All";
     const cityParam = searchParams.get("city") || "All";
-    const pageParam = parseInt(searchParams.get("page") || "1");
-
+    const pageParam = Number.isNaN(rawPage) ? 1 : Math.max(1, rawPage);
+    
     const [activeTab, setActiveTab] = useState<Tab>(() => {
         if (tabParam && VALID_TABS.includes(tabParam)) return tabParam;
         return "featured";
@@ -49,21 +49,15 @@ export function useEventFilters() {
         setCurrentPage(pageParam);
     }, [tabParam, catParam, cityParam, pageParam]);
 
-    // ВИПРАВЛЕНО: Тепер фільтри надійно скидаються в стейті ТА в URL для ВСІХ вкладок
     const handleTabChange = useCallback((tabId: Tab) => {
         setActiveTab(tabId);
         setSearch("");
-        setSearchMode("ai"); // Скидаємо режим пошуку на дефолтний
-        setSelectedCategory("All");
-        setSelectedCity("All");
-        setCurrentPage(1);
+        setSearchMode("ai");
 
         if (tabId === "featured") {
-            // Для головної сторінки прибираємо і tab, і фільтри з URL
-            updateQueryParams({ tab: null, category: null, city: null, page: null });
+            updateQueryParams({ tab: null });
         } else {
-            // Для інших вкладок ставимо правильний tab і ПРИМУСОВО зануляємо старі фільтри в URL
-            updateQueryParams({ tab: tabId, category: null, city: null, page: null });
+            updateQueryParams({ tab: tabId });
         }
     }, [updateQueryParams]);
 
