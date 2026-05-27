@@ -40,10 +40,7 @@ const proxy = http.createServer((req, res) => {
 
     proxyReq.on('error', (err) => {
         console.error('❌ [Proxy Error]:', err.message);
-        if (!res.headersSent) {
-            res.writeHead(502);
-            res.end('Bad Gateway');
-        }
+        if (!res.headersSent) { res.writeHead(502); res.end('Bad Gateway'); }
     });
 
     req.pipe(proxyReq);
@@ -55,22 +52,160 @@ proxy.listen(PROXY_PORT, '127.0.0.1', () => {
 
 
 // =====================================================================
+// 🔎 ПРЯМИЙ ЗАПИТ ДО ELASTICSEARCH (без Gemini)
+// Gemini 1.5 Flash впертий — завжди хоче зробити порожній search спочатку.
+// Нова стратегія: будуємо ES-запит самостійно з тексту користувача,
+// викликаємо Elastic напряму, а Gemini використовуємо тільки для
+// формування красивої текстової відповіді на основі готових результатів.
+// =====================================================================
+async function searchElastic(queryBody) {
+    return new Promise((resolve, reject) => {
+        const body = JSON.stringify(queryBody);
+        const targetUrl = new URL(ELASTIC_URL);
+        const options = {
+            hostname: targetUrl.hostname,
+            port: targetUrl.port || 9200,
+            path: '/events/_search',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        };
+
+        const req = http.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(new Error(`Failed to parse ES response: ${e.message}`)); }
+            });
+        });
+
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
+
+// Будуємо ES-запит з тексту користувача
+function buildElasticQuery(query) {
+    const mustClauses = [];
+    const filterClauses = [];
+
+    // Місяці українською -> номер місяця
+    const monthMap = {
+        'січень': 1, 'січня': 1,
+        'лютий': 2, 'лютого': 2,
+        'березень': 3, 'березня': 3,
+        'квітень': 4, 'квітня': 4,
+        'травень': 5, 'травня': 5,
+        'червень': 6, 'червня': 6,
+        'липень': 7, 'липня': 7,
+        'серпень': 8, 'серпня': 8,
+        'вересень': 9, 'вересня': 9,
+        'жовтень': 10, 'жовтня': 10,
+        'листопад': 11, 'листопада': 11,
+        'грудень': 12, 'грудня': 12
+    };
+
+    // Міста українською -> назва поля cityUk
+    const cityMap = {
+        'київ': 'Київ', 'києві': 'Київ', 'києва': 'Київ',
+        'львів': 'Львів', 'львові': 'Львів', 'львова': 'Львів',
+        'рівне': 'Рівне', 'рівного': 'Рівне', 'рівному': 'Рівне',
+        'харків': 'Харків', 'харкові': 'Харків',
+        'одеса': 'Одеса', 'одесі': 'Одеса',
+        'дніпро': 'Дніпро', 'дніпрі': 'Дніпро',
+        'запоріжжя': 'Запоріжжя', 'запоріжжі': 'Запоріжжя',
+        'вінниця': 'Вінниця', 'вінниці': 'Вінниця',
+        'полтава': 'Полтава', 'полтаві': 'Полтава',
+        'херсон': 'Херсон', 'херсоні': 'Херсон',
+        'миколаїв': 'Миколаїв', 'миколаєві': 'Миколаїв',
+        'черкаси': 'Черкаси', 'черкасах': 'Черкаси',
+        'чернігів': 'Чернігів', 'чернігові': 'Чернігів',
+        'суми': 'Суми', 'сумах': 'Суми',
+        'житомир': 'Житомир', 'житомирі': 'Житомир',
+        'ужгород': 'Ужгород', 'ужгороді': 'Ужгород',
+        'івано-франківськ': 'Івано-Франківськ', 'івано-франківську': 'Івано-Франківськ',
+        'тернопіль': 'Тернопіль', 'тернополі': 'Тернопіль',
+        'хмельницький': 'Хмельницький', 'хмельницькому': 'Хмельницький',
+        'луцьк': 'Луцьк', 'луцьку': 'Луцьк',
+        'рівне': 'Рівне',
+    };
+
+    const lowerQuery = query.toLowerCase();
+    const words = lowerQuery.split(/\s+/);
+
+    // Шукаємо місто
+    let detectedCity = null;
+    for (const word of words) {
+        const clean = word.replace(/[?!.,:"']+$/, '');
+        if (cityMap[clean]) {
+            detectedCity = cityMap[clean];
+            break;
+        }
+    }
+
+    // Шукаємо місяць
+    let detectedMonth = null;
+    for (const word of words) {
+        const clean = word.replace(/[?!.,:"']+$/, '');
+        if (monthMap[clean]) {
+            detectedMonth = monthMap[clean];
+            break;
+        }
+    }
+
+    // Додаємо multi_match для пошуку теми
+    mustClauses.push({
+        multi_match: {
+            query: query,
+            fields: ["title^2", "description", "category"],
+            fuzziness: "AUTO",
+            type: "best_fields"
+        }
+    });
+
+    // Додаємо фільтр по місту
+    if (detectedCity) {
+        filterClauses.push({ match: { cityUk: detectedCity } });
+        console.log(`  ↳ 🏙️  Detected city: ${detectedCity}`);
+    }
+
+    // Додаємо фільтр по місяцю
+    if (detectedMonth) {
+        const year = new Date().getFullYear();
+        const from = `${year}-${String(detectedMonth).padStart(2, '0')}-01T00:00:00`;
+        const lastDay = new Date(year, detectedMonth, 0).getDate();
+        const to = `${year}-${String(detectedMonth).padStart(2, '0')}-${lastDay}T23:59:59`;
+        filterClauses.push({ range: { parsedDate: { gte: from, lte: to } } });
+        console.log(`  ↳ 📅 Detected month: ${detectedMonth} → ${from} — ${to}`);
+    }
+
+    return {
+        query: {
+            bool: {
+                must: mustClauses,
+                filter: filterClauses
+            }
+        },
+        sort: [{ parsedDate: { order: "asc" } }],
+        size: 20
+    };
+}
+
+
+// =====================================================================
 // 🚀 ІНІЦІАЛІЗАЦІЯ MCP КЛІЄНТА
 // =====================================================================
 const transport = new StdioClientTransport({
     command: "node",
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
-    env: {
-        ...process.env,
-        ES_URL: `http://127.0.0.1:${PROXY_PORT}`
-    }
+    env: { ...process.env, ES_URL: `http://127.0.0.1:${PROXY_PORT}` }
 });
 
-const mcpClient = new Client({
-    name: "eventspace-mcp-bridge",
-    version: "1.0.0"
-}, { capabilities: {} });
-
+const mcpClient = new Client({ name: "eventspace-mcp-bridge", version: "1.0.0" }, { capabilities: {} });
 let isConnected = false;
 
 try {
@@ -87,13 +222,9 @@ function cleanSchema(schema) {
     const cleaned = {};
     for (const [key, value] of Object.entries(schema)) {
         if (forbidden.includes(key)) continue;
-        if (Array.isArray(value)) {
-            cleaned[key] = value.map(item => cleanSchema(item));
-        } else if (typeof value === 'object') {
-            cleaned[key] = cleanSchema(value);
-        } else {
-            cleaned[key] = value;
-        }
+        if (Array.isArray(value)) cleaned[key] = value.map(item => cleanSchema(item));
+        else if (typeof value === 'object') cleaned[key] = cleanSchema(value);
+        else cleaned[key] = value;
     }
     return cleaned;
 }
@@ -105,185 +236,79 @@ function cleanSchema(schema) {
 app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
-
         console.log(`\n🔍 [${new Date().toISOString()}] Query received: "${query}"`);
 
         if (!query) return res.status(400).json({ error: "Query is required" });
         if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
 
-        const mcpTools = await mcpClient.listTools();
+        // =====================================================================
+        // КРОК 1: Шукаємо в Elasticsearch напряму — без Gemini
+        // =====================================================================
+        const esQuery = buildElasticQuery(query);
+        console.log(`  ↳ ES query:`, JSON.stringify(esQuery.query));
 
-        // Залишаємо тільки інструмент пошуку
-        const ALLOWED_TOOLS = ['search'];
-        const functionDeclarations = mcpTools.tools
-            .filter(tool => ALLOWED_TOOLS.includes(tool.name))
-            .map(tool => ({
-                name: tool.name,
-                description: tool.description,
-                parameters: cleanSchema(tool.inputSchema)
-            }));
+        let esResults;
+        try {
+            esResults = await searchElastic(esQuery);
+        } catch (esError) {
+            console.error(`  ↳ ❌ Elasticsearch error:`, esError.message);
+            return res.status(500).json({ error: `Elasticsearch error: ${esError.message}` });
+        }
 
-        console.log(`  ↳ Available tools: [${functionDeclarations.map(t => t.name).join(', ')}]`);
+        const hits = esResults?.hits?.hits ?? [];
+        console.log(`  ↳ Elasticsearch returned ${hits.length} hits (total: ${esResults?.hits?.total?.value ?? '?'})`);
 
+        const rawMcpData = [{ text: JSON.stringify(esResults) }];
+
+        // =====================================================================
+        // КРОК 2: Передаємо результати Gemini тільки для формування відповіді
+        // =====================================================================
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-        const requestId = Date.now();
+        const hitsForGemini = hits.map(h => ({
+            id: h._id,
+            title: h._source?.title,
+            date: h._source?.parsedDate,
+            city: h._source?.cityUk || h._source?.city,
+            category: h._source?.category
+        }));
 
-        let conversationHistory = [
-            {
-                role: "user",
-                parts: [{ text: `
-[request_id: ${requestId}]
-Ти — ШІ-асистент платформи EventSpace. Користувач шукає події за запитом: "${query}".
+        const geminiPrompt = `
+Ти — ШІ-асистент платформи EventSpace. Користувач шукав: "${query}".
 Сьогоднішня дата: ${new Date().toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })}.
 
-СТРУКТУРА ІНДЕКСУ "events" В ELASTICSEARCH:
-- cityUk: назва міста українською (наприклад: "Рівне", "Київ", "Львів")
-- category: категорія події (наприклад: "концерт", "виставка")
-- title: назва події
-- description: опис події
-- parsedDate: дата події (формат ISO)
+Ось результати пошуку з бази даних (${hits.length} подій):
+${JSON.stringify(hitsForGemini, null, 2)}
 
-СУВОРІ ПРАВИЛА — виконай їх точно:
-1. Відразу викликай інструмент "search" з індексом "events". НЕ викликай list_indices або get_mappings.
-2. ОБОВ'ЯЗКОВО передавай queryBody з конкретними фільтрами. НІКОЛИ не передавай порожній queryBody: {}.
-3. Використовуй multi_match по полях ["title", "description", "category"] для пошуку теми.
-4. Якщо у запиті є місто — додай match по полю "cityUk" з назвою міста українською.
-5. Якщо у запиті згадується місяць (наприклад "червень") — додай фільтр range по полю "parsedDate" на цей місяць поточного року.
-6. Сортуй за parsedDate asc.
-7. Виведи знайдені події списком у форматі: [Назва - Дата](/events/ID).
-8. НЕ вигадуй пояснень що події "ще не додані" або "система відображає інший місяць". Якщо результати є — просто виведи їх. Якщо результатів немає — скажи що подій не знайдено.
-        ` }]
-            }
-        ];
+ЗАВДАННЯ:
+1. Якщо список НЕ порожній — виведи всі знайдені події у форматі: [Назва - Дата](/events/ID)
+2. Якщо список порожній — скажи що подій не знайдено і запропонуй розширити пошук.
+3. НЕ вигадуй події яких немає у списку.
+4. НЕ пиши що "система відображає інший місяць" або що "червень ще попереду" — якщо дати є у списку, просто виведи їх.
+5. Дату форматуй як: ДД.ММ.РРРР ГГ:ХХ
+        `;
 
-        let lastMcpData = [];
-        let loopCount = 0;
-        const MAX_LOOPS = 6;
-        let toolWasCalled = false;
-
-        while (loopCount < MAX_LOOPS) {
-            loopCount++;
-
-            const callingMode = (!toolWasCalled) ? "ANY" : "AUTO";
-            console.log(`  ↳ Loop ${loopCount}, mode: ${callingMode}`);
-
-            let geminiRequestBody = {
-                contents: conversationHistory,
-                tools: [{ functionDeclarations }],
-                toolConfig: { functionCallingConfig: { mode: callingMode } }
-            };
-
-            let response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(geminiRequestBody)
-            });
-
-            let jsonResponse = await response.json();
-
-            if (jsonResponse.error) {
-                console.error("❌ Gemini API error:", jsonResponse.error);
-                return res.json({ agentMessage: `Помилка ШІ: ${jsonResponse.error.message}`, rawMcpData: [] });
-            }
-
-            let candidate = jsonResponse.candidates?.[0];
-            let parts = candidate?.content?.parts || [];
-
-            const partTypes = parts.map(p => p.functionCall ? `functionCall(${p.functionCall.name})` : 'text');
-            console.log(`  ↳ Gemini returned: [${partTypes.join(', ')}]`);
-
-            if (candidate?.content) conversationHistory.push(candidate.content);
-
-            let functionCallPart = parts.find(p => p.functionCall);
-            let textPart = parts.find(p => p.text);
-
-            if (functionCallPart) {
-                const { name, args } = functionCallPart.functionCall;
-
-                // ✅ БЛОКУЄМО порожній queryBody
-                // Gemini іноді робить "розвідувальний" запит без фільтрів і отримує всі 2752 події.
-                // Після цього він вирішує що вже має достатньо даних і не робить нормальний запит.
-                // Замість виконання — повертаємо помилку і змушуємо його повторити з фільтрами.
-                const qb = args?.queryBody;
-                const isEmptyQuery = !qb || Object.keys(qb).length === 0;
-                if (name === 'search' && isEmptyQuery) {
-                    console.log(`  ↳ ⛔ Blocked empty queryBody — forcing Gemini to retry with filters`);
-                    conversationHistory.push({
-                        role: "user",
-                        parts: [{
-                            functionResponse: {
-                                name,
-                                response: {
-                                    error: "queryBody не може бути порожнім. Сформуй конкретний запит з фільтрами по місту, категорії або даті відповідно до запиту користувача. Не роби загальний пошук без фільтрів."
-                                }
-                            }
-                        }]
-                    });
-                    continue; // повертаємось до початку циклу без зміни toolWasCalled
-                }
-
-                toolWasCalled = true;
-                console.log(`  ↳ Calling MCP tool: ${name}`, JSON.stringify(args));
-
-                try {
-                    const toolResult = await mcpClient.callTool({ name, arguments: args });
-
-                    const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
-                    if (toolTextContent) {
-                        let jsonText = toolTextContent;
-                        const jsonMatch = toolTextContent.match(/\{[\s\S]*\}/);
-                        if (jsonMatch) jsonText = jsonMatch[0];
-
-                        lastMcpData = [{ text: jsonText }];
-
-                        try {
-                            const parsed = JSON.parse(jsonText);
-                            const hitsCount = parsed?.hits?.hits?.length ?? '?';
-                            console.log(`  ↳ Elasticsearch returned ${hitsCount} hits`);
-                        } catch {
-                            console.log(`  ↳ Elasticsearch raw response (first 200 chars): ${toolTextContent.substring(0, 200)}`);
-                        }
-                    }
-
-                    conversationHistory.push({
-                        role: "user",
-                        parts: [{
-                            functionResponse: {
-                                name: name,
-                                response: { output: toolResult.content }
-                            }
-                        }]
-                    });
-                } catch (toolError) {
-                    console.error(`  ↳ ❌ MCP tool error:`, toolError.message);
-                    conversationHistory.push({
-                        role: "user",
-                        parts: [{ functionResponse: { name: name, response: { error: toolError.message } } }]
-                    });
-                }
-                continue;
-            }
-
-            if (textPart) {
-                console.log(`  ↳ ✅ Final text response received`);
-                return res.json({
-                    agentMessage: textPart.text,
-                    rawMcpData: lastMcpData
-                });
-            }
-
-            break;
-        }
-
-        if (!toolWasCalled) {
-            console.warn("  ↳ ⚠️ WARNING: MCP tool was never called by Gemini!");
-        }
-
-        return res.json({
-            agentMessage: "Я перевірив базу даних подій. Ознайомтеся з результатами нижче.",
-            rawMcpData: lastMcpData
+        const geminiResponse = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: geminiPrompt }] }]
+            })
         });
+
+        const geminiJson = await geminiResponse.json();
+
+        if (geminiJson.error) {
+            console.error("❌ Gemini error:", geminiJson.error);
+            return res.json({ agentMessage: `Помилка ШІ: ${geminiJson.error.message}`, rawMcpData });
+        }
+
+        const agentMessage = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text
+            ?? "Я перевірив базу даних. Ознайомтеся з результатами нижче.";
+
+        console.log(`  ↳ ✅ Gemini response ready`);
+
+        return res.json({ agentMessage, rawMcpData });
 
     } catch (error) {
         console.error("❌ Unhandled error:", error);
