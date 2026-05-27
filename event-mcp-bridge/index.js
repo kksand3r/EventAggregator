@@ -11,7 +11,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
 // =====================================================================
-// 🛡️ ВНУТРІШНІЙ HTTP-ПРОКСІ ДЛЯ КОРЕКЦІЇ ЗАГОЛОВКІВ (Fix compatible-with=9)
+// 🛡️ ВНУТРІШНІЙ HTTP-ПРОКСІ ДЛЯ КОРЕКЦІЇ ЗАГОЛОВКІВ
 // =====================================================================
 const PROXY_PORT = 9292;
 const proxy = http.createServer((req, res) => {
@@ -50,12 +50,12 @@ const proxy = http.createServer((req, res) => {
 });
 
 proxy.listen(PROXY_PORT, '127.0.0.1', () => {
-    console.log(`🛡️  Internal Elastic Proxy successfully running on 127.0.0.1:${PROXY_PORT}`);
+    console.log(`🛡️  Internal Elastic Proxy running on 127.0.0.1:${PROXY_PORT}`);
 });
 
 
 // =====================================================================
-// 🚀 ІНІЦІАЛІЗАЦІЯ MCP КЛІЄНТА ТА ТРАНСПОРТУ
+// 🚀 ІНІЦІАЛІЗАЦІЯ MCP КЛІЄНТА
 // =====================================================================
 const transport = new StdioClientTransport({
     command: "node",
@@ -98,12 +98,17 @@ function cleanSchema(schema) {
     return cleaned;
 }
 
+
 // =====================================================================
-// 🧠 API ДЛЯ ОБРОБКИ ЗАПИТІВ (AI SEARCH)
+// 🧠 AI SEARCH
 // =====================================================================
 app.post('/api/mcp-search', async (req, res) => {
     try {
         const { query } = req.body;
+
+        // ✅ ФІХ 1: Логуємо вхідний запит — щоб переконатись що query різний
+        console.log(`\n🔍 [${new Date().toISOString()}] Query received: "${query}"`);
+
         if (!query) return res.status(400).json({ error: "Query is required" });
         if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
 
@@ -116,18 +121,23 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
+        // ✅ ФІХ 2: Додаємо унікальний request_id у промпт — щоб Gemini не кешував відповіді
+        const requestId = Date.now();
+
         let conversationHistory = [
             {
                 role: "user",
                 parts: [{ text: `
-Ти — розумний ШІ-асистент платформи EventSpace. Користувач шукає події за допомогою запиту: "${query}".
+[request_id: ${requestId}]
+Ти — розумний ШІ-асистент платформи EventSpace. Користувач шукає події за запитом: "${query}".
 
-СУВОРІ ПРАВИЛА ДЛЯ ФОРМУВАННЯ ЗАПИТУ В ELASTICSEARCH:
-1. Для пошуку використовуй простий повнотекстовий запит (match або multi_match). 
-2. Тобі НЕ потрібно перекладати назви міст чи категорій на англійську мову. Передавай слова українською мовою.
-3. Шукай місто за полем "cityUk", а категорію або суть заходу — за полями "category", "title" та "description".
-4. Сортуй результати за "parsedDate" у порядку "asc".
-5. Виведи у фінальній відповіді ВСІ знайдені події списком у форматі Markdown: [Назва - Дата](/events/ID).
+СУВОРІ ПРАВИЛА:
+1. Ти ЗОБОВ'ЯЗАНИЙ викликати інструмент пошуку в Elasticsearch для КОЖНОГО запиту.
+2. Використовуй простий повнотекстовий запит (match або multi_match).
+3. НЕ перекладай назви міст чи категорій — передавай слова українською мовою.
+4. Шукай місто за полем "cityUk", категорію — за "category", "title", "description".
+5. Сортуй результати за "parsedDate" у порядку "asc".
+6. У фінальній відповіді виведи ВСІ знайдені події у форматі Markdown: [Назва - Дата](/events/ID).
         ` }]
             }
         ];
@@ -135,14 +145,21 @@ app.post('/api/mcp-search', async (req, res) => {
         let lastMcpData = [];
         let loopCount = 0;
         const MAX_LOOPS = 4;
+        let toolWasCalled = false; // ✅ ФІХ 3: Відстежуємо чи інструмент взагалі викликався
 
         while (loopCount < MAX_LOOPS) {
             loopCount++;
 
+            // ✅ ФІХ 4: На першій ітерації — режим ANY (примусовий виклик інструменту).
+            //          На наступних — AUTO (щоб Gemini міг сформувати текстову відповідь).
+            const callingMode = (!toolWasCalled) ? "ANY" : "AUTO";
+
+            console.log(`  ↳ Loop ${loopCount}, mode: ${callingMode}`);
+
             let geminiRequestBody = {
                 contents: conversationHistory,
                 tools: [{ functionDeclarations }],
-                toolConfig: { functionCallingConfig: { mode: "AUTO" } }
+                toolConfig: { functionCallingConfig: { mode: callingMode } }
             };
 
             let response = await fetch(url, {
@@ -154,28 +171,42 @@ app.post('/api/mcp-search', async (req, res) => {
             let jsonResponse = await response.json();
 
             if (jsonResponse.error) {
+                console.error("❌ Gemini API error:", jsonResponse.error);
                 return res.json({ agentMessage: `Помилка ШІ: ${jsonResponse.error.message}`, rawMcpData: [] });
             }
 
             let candidate = jsonResponse.candidates?.[0];
             let parts = candidate?.content?.parts || [];
 
+            // ✅ ФІХ 5: Логуємо що саме повернув Gemini
+            const partTypes = parts.map(p => p.functionCall ? `functionCall(${p.functionCall.name})` : 'text');
+            console.log(`  ↳ Gemini returned: [${partTypes.join(', ')}]`);
+
             if (candidate?.content) conversationHistory.push(candidate.content);
 
-            // ВИПРАВЛЕННЯ 1: Шукаємо потрібні частини у всьому масиві
             let functionCallPart = parts.find(p => p.functionCall);
             let textPart = parts.find(p => p.text);
 
             if (functionCallPart) {
+                toolWasCalled = true; // ✅ Позначаємо що інструмент був викликаний
                 const { name, args } = functionCallPart.functionCall;
+
+                console.log(`  ↳ Calling MCP tool: ${name}`, JSON.stringify(args));
+
                 try {
                     const toolResult = await mcpClient.callTool({ name, arguments: args });
 
-                    // ВИПРАВЛЕННЯ 2: Коректно витягуємо чистий JSON від Elasticsearch
-                    // Elastic MCP Server повертає текст у масиві об'єктів. Беремо саме його.
                     const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
                     if (toolTextContent) {
                         lastMcpData = [{ text: toolTextContent }];
+                        // ✅ ФІХ 6: Логуємо скільки результатів повернув Elastic
+                        try {
+                            const parsed = JSON.parse(toolTextContent);
+                            const hitsCount = parsed?.hits?.hits?.length ?? '?';
+                            console.log(`  ↳ Elasticsearch returned ${hitsCount} hits`);
+                        } catch {
+                            console.log(`  ↳ Elasticsearch returned raw text (not JSON)`);
+                        }
                     }
 
                     conversationHistory.push({
@@ -188,15 +219,17 @@ app.post('/api/mcp-search', async (req, res) => {
                         }]
                     });
                 } catch (toolError) {
+                    console.error(`  ↳ ❌ MCP tool error:`, toolError.message);
                     conversationHistory.push({
                         role: "user",
                         parts: [{ functionResponse: { name: name, response: { error: toolError.message } } }]
                     });
                 }
-                continue; // Йдемо на наступну ітерацію циклу, щоб Gemini проаналізував дані
+                continue;
             }
 
             if (textPart) {
+                console.log(`  ↳ ✅ Final text response received`);
                 return res.json({
                     agentMessage: textPart.text,
                     rawMcpData: lastMcpData
@@ -206,12 +239,18 @@ app.post('/api/mcp-search', async (req, res) => {
             break;
         }
 
+        // ✅ ФІХ 7: Якщо інструмент так і не викликався — повертаємо явну помилку для діагностики
+        if (!toolWasCalled) {
+            console.warn("  ↳ ⚠️ WARNING: MCP tool was never called by Gemini!");
+        }
+
         return res.json({
             agentMessage: "Я перевірив базу даних подій. Ознайомтеся з результатами нижче.",
             rawMcpData: lastMcpData
         });
 
     } catch (error) {
+        console.error("❌ Unhandled error:", error);
         res.status(500).json({ error: error.message });
     }
 });
