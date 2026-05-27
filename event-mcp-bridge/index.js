@@ -1,304 +1,220 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Elastic.Clients.Elasticsearch;
-using EventAggregator.Domain.Models;
-using EventAggregator.Api.DTOs;
-using Elastic.Clients.Elasticsearch.QueryDsl;
-using EventAggregator.Application.Services;
-using System.Text;
-using System.Text.Json;
+﻿import express from 'express';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import http from 'http';
 
-namespace EventAggregator.Api.Controllers
-{
-    [ApiController]
-        [Route("api/[controller]")]
-    public class EventsController : ControllerBase
-    {
-        private readonly ElasticsearchClient _client;
-        private readonly HttpClient _httpClient;
-        private readonly string _mcpBridgeUrl;
+const app = express();
+app.use(express.json());
 
-        public EventsController(ElasticsearchClient client, HttpClient httpClient, IConfiguration config)
-        {
-            _client = client;
-            _httpClient = httpClient;
-            _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
+
+// =====================================================================
+// 🛡️ ВНУТРІШНІЙ HTTP-ПРОКСІ ДЛЯ КОРЕКЦІЇ ЗАГОЛОВКІВ (Fix compatible-with=9)
+// =====================================================================
+const PROXY_PORT = 9292;
+const proxy = http.createServer((req, res) => {
+    const targetUrl = new URL(ELASTIC_URL);
+    const proxyHeaders = { ...req.headers };
+    proxyHeaders.host = targetUrl.host;
+
+    ['accept', 'content-type'].forEach(header => {
+        if (proxyHeaders[header] && typeof proxyHeaders[header] === 'string' && proxyHeaders[header].includes('compatible-with=9')) {
+            proxyHeaders[header] = proxyHeaders[header].replace('compatible-with=9', 'compatible-with=8');
         }
+    });
 
-        [HttpGet("ai-search")]
-        public async Task<IActionResult> AiSearch([FromQuery] string? query)
-        {
-            if (string.IsNullOrWhiteSpace(query))
-                return Ok(new
-                {
-                    agentMessage = "Привіт! Яких подій ви шукаєте?",
-                    events = Enumerable.Empty<EventDto>()
-                });
+    const options = {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || 9200,
+        path: req.url,
+        method: req.method,
+        headers: proxyHeaders
+    };
 
-            try
-            {
-                var requestBody = new { query = query };
-                var content = new StringContent(
-                    JsonSerializer.Serialize(requestBody),
-                    Encoding.UTF8,
-                    "application/json"
-                );
+    const proxyReq = http.request(options, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+    });
 
-                var response = await _httpClient.PostAsync($"{_mcpBridgeUrl}/api/mcp-search", content);
-
-                if (!response.IsSuccessStatusCode)
-                    return StatusCode((int)response.StatusCode,
-                "Тимчасово не вдалося зв'язатися з сервісом ШІ-аналітики.");
-
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(jsonResponse);
-
-                var agentMessage = doc.RootElement.TryGetProperty("agentMessage", out var msgProp)
-                    ? msgProp.GetString() ?? "Не вдалося отримати відповідь від асистента."
-                    : "Не вдалося отримати відповідь від асистента.";
-
-                var rawMcpData = doc.RootElement.TryGetProperty("rawMcpData", out var rawProp)
-                    ? rawProp : default;
-
-                var eventsList = new List<EventDto>();
-
-                if (rawMcpData.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in rawMcpData.EnumerateArray())
-                    {
-                        if (item.TryGetProperty("text", out var textProp))
-                        {
-                            var hitText = textProp.GetString();
-                            if (string.IsNullOrWhiteSpace(hitText)) continue;
-
-                            try
-                            {
-                                using var esDoc = JsonDocument.Parse(hitText);
-
-                                if (esDoc.RootElement.TryGetProperty("hits", out var topHits) &&
-                                topHits.TryGetProperty("hits", out var hitsArray))
-                                {
-                                    foreach (var hit in hitsArray.EnumerateArray())
-                                    {
-                                        if (hit.TryGetProperty("_source", out var source))
-                                        {
-                                            var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(
-                                                source.GetRawText(), new JsonSerializerOptions
-                                            {
-                                                PropertyNameCaseInsensitive = true
-                                            });
-
-                                            if (scrapedEvent != null)
-                                            {
-                                                if (string.IsNullOrEmpty(scrapedEvent.Id) &&
-                                                    hit.TryGetProperty("_id", out var idProp))
-                                                {
-                                                    scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
-                                                }
-
-                                                eventsList.Add(scrapedEvent.ToDto());
-                                            }
-                                        }
-                                    }
-                                }
-                            else if (esDoc.RootElement.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var hit in esDoc.RootElement.EnumerateArray())
-                                {
-                                    var source = hit.TryGetProperty("_source", out var s) ? s : hit;
-                                    var scrapedEvent = JsonSerializer.Deserialize<ScrapedEvent>(source.GetRawText(),
-                                        new JsonSerializerOptions
-                                    {
-                                        PropertyNameCaseInsensitive = true
-                                    });
-
-                                    if (scrapedEvent != null)
-                                    {
-                                        if (string.IsNullOrEmpty(scrapedEvent.Id) &&
-                                            hit.TryGetProperty("_id", out var idProp))
-                                        {
-                                            scrapedEvent.Id = idProp.GetString() ?? Guid.NewGuid().ToString();
-                                        }
-
-                                        eventsList.Add(scrapedEvent.ToDto());
-                                    }
-                                }
-                            }
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Помилка парсингу результатів MCP: {ex.Message}");
-                            }
-                        }
-                    }
-                }
-
-                var uniqueEvents = eventsList.GroupBy(e => e.Id).Select(g => g.First()).ToList();
-
-                return Ok(new
-                {
-                    agentMessage = agentMessage,
-                    events = uniqueEvents
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    agentMessage = $"Помилка інтеграції MCP агента: {ex.Message}",
-                    events = Enumerable.Empty<EventDto>()
-                });
-            }
+    proxyReq.on('error', (err) => {
+        console.error('❌ [Proxy Error]:', err.message);
+        if (!res.headersSent) {
+            res.writeHead(502);
+            res.end('Bad Gateway');
         }
+    });
 
-        [HttpGet("search")]
-        public async Task<IActionResult> Search([FromQuery] string? query, [FromQuery] int size = 20)
-        {
-            if (string.IsNullOrWhiteSpace(query)) return Ok(Enumerable.Empty<EventDto>());
+    req.pipe(proxyReq);
+});
 
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                .Size(size)
-                .Query(q => q.MultiMatch(mm => mm
-                    .Fields(new[] { "title^2", "description", "category" })
-        .Query(query)
-            .Fuzziness(new Fuzziness("AUTO"))
-            .Type(TextQueryType.BestFields)
-        ))
-        );
+proxy.listen(PROXY_PORT, '127.0.0.1', () => {
+    console.log(`🛡️  Internal Elastic Proxy successfully running on 127.0.0.1:${PROXY_PORT}`);
+});
 
-            return response.IsValidResponse
-                ? Ok(response.Documents.Select(d => d.ToDto()))
-                : StatusCode(500, response.DebugInformation);
-        }
 
-        [HttpGet("{id}/ai-summary")]
-        public async Task<IActionResult> GetAiSummary(string id, [FromServices] GeminiService gemini)
-        {
-            var response = await _client.GetAsync<ScrapedEvent>("events", id);
+// =====================================================================
+// 🚀 ІНІЦІАЛІЗАЦІЯ MCP КЛІЄНТА ТА ТРАНСПОРТУ
+// =====================================================================
+const transport = new StdioClientTransport({
+    command: "node",
+    args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
+    env: {
+        ...process.env,
+        ES_URL: `http://127.0.0.1:${PROXY_PORT}`
+    }
+});
 
-            if (!response.IsValidResponse || response.Source == null)
-                return NotFound(new { Message = $"Подію з ID {id} не знайдено." });
+const mcpClient = new Client({
+    name: "eventspace-mcp-bridge",
+    version: "1.0.0"
+}, { capabilities: {} });
 
-            var summary = await gemini.SummarizeEventAsync(response.Source.Title, response.Source.Description);
-            return Ok(new { Summary = summary });
-        }
+let isConnected = false;
 
-        [HttpGet]
-        public async Task<IActionResult> GetAll(
-        [FromQuery] string? city,
-        [FromQuery] string? category,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
-        {
-            int from = (page - 1) * pageSize;
-            var now = DateTime.UtcNow;
+try {
+    await mcpClient.connect(transport);
+    isConnected = true;
+    console.log("🚀 Connected to Elastic MCP Server successfully");
+} catch (err) {
+    console.error("❌ Failed to connect to MCP Server during startup:", err);
+}
 
-            var filters = new List<Action<QueryDescriptor<ScrapedEvent>>>
-                {
-                    f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
-        };
-
-            // ОНОВЛЕНО: Додано ToLowerInvariant() для точного збігу з keyword-полем в Elasticsearch
-            if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToLowerInvariant())));
-
-            if (!string.IsNullOrWhiteSpace(category) && category != "All")
-                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLowerInvariant())));
-
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                    .From(from)
-                    .Size(pageSize)
-                    .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Asc)))
-                    .Query(q => q.Bool(b => b.Filter(filters.ToArray())))
-            );
-
-            return response.IsValidResponse
-                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) })
-                : StatusCode(500, response.DebugInformation);
-        }
-
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetById(string id)
-        {
-            var response = await _client.GetAsync<ScrapedEvent>("events", id);
-
-            if (response.IsValidResponse && response.Source != null)
-                return Ok(response.Source.ToDto());
-
-            return NotFound();
-        }
-
-        [HttpGet("metadata")]
-        public async Task<IActionResult> GetMetadata()
-        {
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                .Add("unique_cities", ag => ag.Terms(t => t.Field("city").Size(100)))
-                .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
-            ));
-
-            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
-
-            return Ok(new EventMetadataDto
-            {
-                Cities = response.Aggregations.GetStringTerms("unique_cities")?.Buckets.Select(b => b.Key.ToString())
-                    .OrderBy(c => c).ToList() ?? new(),
-                    Categories = response.Aggregations.GetStringTerms("unique_categories")?.Buckets
-                        .Select(b => b.Key.ToString()).OrderBy(c => c).ToList() ?? new()
-            });
-        }
-
-        [HttpGet("stats")]
-        public async Task<IActionResult> GetStats()
-        {
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                .Add("events_by_city", ag => ag.Terms(t => t.Field("city").Size(10)))
-                .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
-            ));
-
-            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
-
-            return Ok(new
-            {
-                ByCity = response.Aggregations.GetStringTerms("events_by_city")?.Buckets
-                    .ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new(),
-                ByCategory = response.Aggregations.GetStringTerms("events_by_category")?.Buckets
-                    .ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new()
-            });
-        }
-
-        [HttpPost("{id}/view")]
-        public async Task<IActionResult> IncrementView(string id)
-        {
-            var request = new UpdateRequest<ScrapedEvent, ScrapedEvent>("events", id)
-            {
-                Script = new Script(new InlineScript(
-                    "if (ctx._source.viewsCount == null) { ctx._source.viewsCount = 1 } else { ctx._source.viewsCount += 1 }"))
-            };
-            var response = await _client.UpdateAsync(request);
-            return response.IsValidResponse ? Ok() : StatusCode(500, response.DebugInformation);
-        }
-
-        [HttpGet("archive")]
-        public async Task<IActionResult> GetArchive([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
-        {
-            int from = (page - 1) * pageSize;
-            var now = DateTime.UtcNow;
-
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s
-                    .From(from)
-                    .Size(pageSize)
-                    .Sort(sort => sort.Field(f => f.ParsedDate, d => d.Order(SortOrder.Desc)))
-                    .Query(q => q.Bool(b => b
-                        .Filter(f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Lt(now))))
-                    ))
-            );
-
-            return response.IsValidResponse
-                ? Ok(new
-                {
-                    Total = response.Total, Page = page, PageSize = pageSize,
-                    Data = response.Documents.Select(d => d.ToDto())
-                })
-                : StatusCode(500, response.DebugInformation);
+function cleanSchema(schema) {
+    if (!schema || typeof schema !== 'object') return schema;
+    const forbidden = ['$schema', 'additionalProperties'];
+    const cleaned = {};
+    for (const [key, value] of Object.entries(schema)) {
+        if (forbidden.includes(key)) continue;
+        if (Array.isArray(value)) {
+            cleaned[key] = value.map(item => cleanSchema(item));
+        } else if (typeof value === 'object') {
+            cleaned[key] = cleanSchema(value);
+        } else {
+            cleaned[key] = value;
         }
     }
+    return cleaned;
 }
+
+// =====================================================================
+// 🧠 API ДЛЯ ОБРОБКИ ЗАПИТІВ (AI SEARCH)
+// =====================================================================
+app.post('/api/mcp-search', async (req, res) => {
+    try {
+        const { query } = req.body;
+        if (!query) return res.status(400).json({ error: "Query is required" });
+        if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
+
+        const mcpTools = await mcpClient.listTools();
+        const functionDeclarations = mcpTools.tools.map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            parameters: cleanSchema(tool.inputSchema)
+        }));
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+        let conversationHistory = [
+            {
+                role: "user",
+                parts: [{ text: `
+Ти — розумний ШІ-асистент платформи EventSpace. Користувач шукає події за допомогою запиту: "${query}".
+
+СУВОРІ ПРАВИЛА ДЛЯ ФОРМУВАННЯ ЗАПИТУ В ELASTICSEARCH:
+1. Для пошуку використовуй простий повнотекстовий запит (match або multi_match). 
+2. Тобі НЕ потрібно перекладати назви міст чи категорій на англійську мову. Передавай слова українською мовою.
+3. Шукай місто за полем "cityUk", а категорію або суть заходу — за полями "category", "title" та "description".
+4. Сортуй результати за "parsedDate" у порядку "asc".
+5. Виведи у фінальній відповіді ВСІ знайдені події списком у форматі Markdown: [Назва - Дата](/events/ID).
+        ` }]
+            }
+        ];
+
+        let lastMcpData = [];
+        let loopCount = 0;
+        const MAX_LOOPS = 4;
+
+        while (loopCount < MAX_LOOPS) {
+            loopCount++;
+
+            let geminiRequestBody = {
+                contents: conversationHistory,
+                tools: [{ functionDeclarations }],
+                toolConfig: { functionCallingConfig: { mode: "AUTO" } }
+            };
+
+            let response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(geminiRequestBody)
+            });
+
+            let jsonResponse = await response.json();
+
+            if (jsonResponse.error) {
+                return res.json({ agentMessage: `Помилка ШІ: ${jsonResponse.error.message}`, rawMcpData: [] });
+            }
+
+            let candidate = jsonResponse.candidates?.[0];
+            let parts = candidate?.content?.parts || [];
+
+            if (candidate?.content) conversationHistory.push(candidate.content);
+
+            // ВИПРАВЛЕННЯ 1: Шукаємо потрібні частини у всьому масиві
+            let functionCallPart = parts.find(p => p.functionCall);
+            let textPart = parts.find(p => p.text);
+
+            if (functionCallPart) {
+                const { name, args } = functionCallPart.functionCall;
+                try {
+                    const toolResult = await mcpClient.callTool({ name, arguments: args });
+
+                    // ВИПРАВЛЕННЯ 2: Коректно витягуємо чистий JSON від Elasticsearch
+                    // Elastic MCP Server повертає текст у масиві об'єктів. Беремо саме його.
+                    const toolTextContent = toolResult.content.find(c => c.type === 'text')?.text;
+                    if (toolTextContent) {
+                        lastMcpData = [{ text: toolTextContent }];
+                    }
+
+                    conversationHistory.push({
+                        role: "user",
+                        parts: [{
+                            functionResponse: {
+                                name: name,
+                                response: { output: toolResult.content }
+                            }
+                        }]
+                    });
+                } catch (toolError) {
+                    conversationHistory.push({
+                        role: "user",
+                        parts: [{ functionResponse: { name: name, response: { error: toolError.message } } }]
+                    });
+                }
+                continue; // Йдемо на наступну ітерацію циклу, щоб Gemini проаналізував дані
+            }
+
+            if (textPart) {
+                return res.json({
+                    agentMessage: textPart.text,
+                    rawMcpData: lastMcpData
+                });
+            }
+
+            break;
+        }
+
+        return res.json({
+            agentMessage: "Я перевірив базу даних подій. Ознайомтеся з результатами нижче.",
+            rawMcpData: lastMcpData
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, '0.0.0.0', () => console.log(`Bridge microservice running on port ${PORT}`));
