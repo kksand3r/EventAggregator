@@ -186,12 +186,13 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // 🌟 ВИПРАВЛЕНО: Змінено "city.keyword" на "city", оскільки це чистий Keyword-тип
+            // ✅ СТАЛО: Шукаємо точний збіг без примусового регістру.
+            // Якщо прийшло "Uzhhorod", шукаємо "Uzhhorod".
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToUpper())));
+                filters.Add(f => f.Term(t => t.Field("city").Value(city)));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
-                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLower())));
+                filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLowerInvariant())));
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .From(from)
