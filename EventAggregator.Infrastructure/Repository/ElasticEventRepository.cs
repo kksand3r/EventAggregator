@@ -27,6 +27,7 @@ public class ElasticEventRepository : IEventRepository
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
+                    // 🌟 Для всіх текстових полів використовуємо .Text()
                     .Text(t => t.Title, g => g.Analyzer("ukrainian")) 
                     .Text(t => t.Description, g => g.Analyzer("ukrainian")) 
                     .Text(t => t.Category, g => g
