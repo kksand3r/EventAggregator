@@ -21,12 +21,6 @@ services:
     networks:
       - event_network
     restart: unless-stopped
-    # 🌟 ДОДАНО: Перевірка готовності Elasticsearch
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'You Know, for Search'"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   event-mcp-bridge:
     build:
@@ -42,8 +36,7 @@ services:
     ports:
       - "5001:5001"
     depends_on:
-      elasticsearch:
-        condition: service_healthy # 🌟 Чекає на готовність еластіка
+      - elasticsearch
     networks:
       - event_network
     restart: unless-stopped
@@ -61,10 +54,8 @@ services:
       - Gemini__ApiKey=${GEMINI_API_KEY}
       - McpBridgeUrl=http://event-mcp-bridge:5001
     depends_on:
-      elasticsearch:
-        condition: service_healthy # 🌟 Чекає на готовність еластіка
-      event-mcp-bridge:
-        condition: service_started
+      - elasticsearch
+      - event-mcp-bridge
     networks:
       - event_network
     restart: unless-stopped
@@ -78,10 +69,7 @@ services:
       - Elasticsearch__Url=http://elasticsearch:9200
       - Gemini__ApiKey=${GEMINI_API_KEY:-""}
     depends_on:
-      elasticsearch:
-        condition: service_healthy
-      api:
-        condition: service_started # 🌟 ВАЖЛИВО: Скрейпер чекає, поки API підніметься і створить мапінг
+      - elasticsearch
     networks:
       - event_network
 
