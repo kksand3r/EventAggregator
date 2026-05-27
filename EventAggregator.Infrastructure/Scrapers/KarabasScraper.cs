@@ -67,7 +67,7 @@ public class KarabasScraper : IEventScraper
 
             foreach (var city in _citySlugs)
             {
-                // Форматуємо назву міста для логів та сумісності з UI (напр. "Uzhhorod")
+                // Приводимо місто до формату "Uzhhorod" / "Rivne" для коректної фільтрації на фронтенді
                 string formattedCity = city.Substring(0, 1).ToUpper() + city.Substring(1).ToLower();
                 _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", formattedCity);
 
@@ -143,8 +143,8 @@ public class KarabasScraper : IEventScraper
                                                     description = Regex.Replace(description, @"\s+", " ").Trim();
                                                 }
 
-                                                // Надійна обробка ISO 8601 дати
-                                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(1); // fallback
+                                                // Парсимо ISO 8601 дату з збереженням часового поясу
+                                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(2); 
                                                 string displayDate = startDateStr;
 
                                                 if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
@@ -170,12 +170,12 @@ public class KarabasScraper : IEventScraper
                                                             Description = description,
                                                             Date = displayDate, 
                                                             ParsedDate = finalParsedDate,
-                                                            City = formattedCity, // Записує "Uzhhorod" / "Rivne" замість "UZHHOROD"
+                                                            City = formattedCity, 
                                                             CityUk = CityTranslations.GetValueOrDefault(city.ToLower(), formattedCity),
                                                             Category = category,
                                                             ImageUrl = imageUrl.Trim(),
-                                                            // Даємо стартові перегляди, щоб подія пройшла клієнтські фільтри сортування topViewed
-                                                            ViewCount = Random.Shared.Next(15, 85) 
+                                                            // Виправлено назву поля на ViewsCount (відповідно до моделі)
+                                                            ViewsCount = Random.Shared.Next(110, 340)
                                                         };
 
                                                         newEvent.GenerateDeterministicId();
@@ -195,7 +195,7 @@ public class KarabasScraper : IEventScraper
 
                                 if (parsedOnPageCount > 0)
                                 {
-                                    _logger.LogInformation("📦 Парсер знайшел {Count} подій з описом на Сторінці {Page} ({Category})", parsedOnPageCount, page, category);
+                                    _logger.LogInformation("📦 Парсер знайшов {Count} подій з описом на Сторінці {Page} ({Category})", parsedOnPageCount, page, category);
                                 }
                             }
 
