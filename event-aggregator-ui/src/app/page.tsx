@@ -36,8 +36,8 @@ function HomeContent() {
                 setAllEvents(eventsRes.data);
                 setTotalEvents(eventsRes.total);
 
-                // ОНОВЛЕНО: Використовуємо viewsCount замість viewCount відповідно до бекенд DTO
-                const byViews = [...eventsRes.data].sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0));
+                // ВИПРАВЛЕНО: Використовуємо viewCount, оскільки масив вже сконвертовано в EventListItem
+                const byViews = [...eventsRes.data].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
                 const top6    = byViews.slice(0, 6);
                 const rest    = eventsRes.data.filter(e => !top6.includes(e)).sort(() => Math.random() - 0.5);
                 setFeaturedEvents([...top6, ...rest.slice(0, 6)]);
