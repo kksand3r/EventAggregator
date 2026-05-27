@@ -186,7 +186,7 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // ✅ ВИПРАВЛЕНО: Шукаємо по точному Keyword-полю "city" у нижньому регістрі (слаг)
+            // ✅ ОНОВЛЕНО: Приводимо до нижнього регістру слагу, бо скрапери пишуть "uzhhorod", "rivne"
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
                 filters.Add(f => f.Term(t => t.Field(ev => ev.City).Value(city.ToLowerInvariant())));
 
