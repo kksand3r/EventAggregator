@@ -16,6 +16,8 @@ export function useEventFilters() {
     const tabParam = searchParams.get("tab") as Tab | null;
     const catParam = searchParams.get("category") || "All";
     const cityParam = searchParams.get("city") || "All";
+    
+    const rawPage = parseInt(searchParams.get("page") || "1");
     const pageParam = Number.isNaN(rawPage) ? 1 : Math.max(1, rawPage);
     
     const [activeTab, setActiveTab] = useState<Tab>(() => {
