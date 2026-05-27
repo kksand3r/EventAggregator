@@ -65,10 +65,14 @@ public class KarabasScraper : IEventScraper
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/javascript, */*; q=0.01");
             long timeStamp = new DateTimeOffset(DateTime.UtcNow.Date).ToUnixTimeSeconds();
 
+            _logger.LogInformation("🚀 Початок скрапінгу {Provider} по категоріях...", ProviderName);
+
             foreach (var city in _citySlugs)
             {
                 string cityLower = city.ToLowerInvariant();
-                _logger.LogInformation("🏙️ Karabas.com: Пошук у місті: {City} (через API + JSON-LD)", cityLower.ToUpper());
+                _logger.LogInformation("🏙️ {Provider}: Сканування міста {City}...", ProviderName, cityLower.ToUpper());
+                
+                int eventsBeforeCity = allEvents.Count;
 
                 foreach (var category in _categories)
                 {
@@ -85,7 +89,7 @@ public class KarabasScraper : IEventScraper
                             var response = await httpClient.GetAsync(targetUrl);
                             if (!response.IsSuccessStatusCode)
                             {
-                                _logger.LogWarning("⚠️ Помилка API {Code} для {Url}", response.StatusCode, targetUrl);
+                                _logger.LogDebug("⚠️ Помилка API {Code} для {Url}", response.StatusCode, targetUrl);
                                 break;
                             }
 
@@ -96,7 +100,6 @@ public class KarabasScraper : IEventScraper
                             if (root.TryGetProperty("content", out var contentEl))
                             {
                                 string htmlContent = contentEl.GetString() ?? "";
-
                                 var jsonLdRegex = new Regex(@"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
                                 var matches = jsonLdRegex.Matches(htmlContent);
 
@@ -168,18 +171,15 @@ public class KarabasScraper : IEventScraper
                                                             Description = description,
                                                             Date = displayDate, 
                                                             ParsedDate = finalParsedDate,
-                                                            // Зберігаємо виключно стабільний нижній регістр слага міст (напр. "uzhhorod")
                                                             City = cityLower, 
                                                             CityUk = CityTranslations.GetValueOrDefault(cityLower, cityLower),
                                                             Category = category,
-                                                            ImageUrl = imageUrl.Trim(),
-                                                            ViewsCount = Random.Shared.Next(110, 340)
+                                                            ImageUrl = imageUrl.Trim()
                                                         };
 
                                                         newEvent.GenerateDeterministicId();
                                                         allEvents.Add(newEvent);
                                                         parsedOnPageCount++;
-                                                        _logger.LogInformation("✅ Karabas (JSON-LD): {Title} [{City}]", newEvent.Title, newEvent.City.ToUpper());
                                                     }
                                                 }
                                             }
@@ -193,7 +193,7 @@ public class KarabasScraper : IEventScraper
 
                                 if (parsedOnPageCount > 0)
                                 {
-                                    _logger.LogInformation("📦 Парсер знайшов {Count} подій з описом на Сторінці {Page} ({Category})", parsedOnPageCount, page, category);
+                                    _logger.LogInformation("📦 {Provider}: Знайдено {Count} подій на сторінці {Page} ({Category})", ProviderName, parsedOnPageCount, page, category.ToUpper());
                                 }
                             }
 
@@ -211,14 +211,38 @@ public class KarabasScraper : IEventScraper
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning("⚠️ Помилка збору {Url}: {Msg}", targetUrl, ex.Message);
+                            _logger.LogDebug("⚠️ Помилка збору {Url}: {Msg}", targetUrl, ex.Message);
                             hasMorePages = false;
                         }
                     }
                     await Task.Delay(Random.Shared.Next(800, 1500));
                 }
+
+                int eventsAddedForCity = allEvents.Count - eventsBeforeCity;
+                if (eventsAddedForCity > 0)
+                    _logger.LogInformation("✅ {Provider}: Отримано {Count} подій для міста {City}", ProviderName, eventsAddedForCity, cityLower.ToUpper());
+                else
+                    _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName, cityLower.ToUpper());
             }
         }
+
+        _logger.LogInformation("🏁 {Provider}: Збір завершено. Фінальний звіт провайдера:", ProviderName);
+        _logger.LogInformation("=================================================");
+
+        var statsByCity = allEvents.GroupBy(e => e.CityUk).OrderByDescending(g => g.Count());
+        _logger.LogInformation("📌 Розподіл за МІСТАМИ:");
+        foreach (var group in statsByCity)
+            _logger.LogInformation("   📍 {City}: {Count} подій", group.Key, group.Count());
+
+        _logger.LogInformation("-------------------------------------------------");
+
+        var statsByCategory = allEvents.GroupBy(e => e.Category).OrderByDescending(g => g.Count());
+        _logger.LogInformation("📌 Розподіл за КАТЕГОРІЯМИ:");
+        foreach (var group in statsByCategory)
+            _logger.LogInformation("   🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
+
+        _logger.LogInformation("=================================================");
+        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName, allEvents.Count);
 
         return allEvents;
     }

@@ -17,7 +17,6 @@ public class ConcertUaScraper : IEventScraper
 {
     public string ProviderName => "Concert.ua";
     private readonly ILogger<ConcertUaScraper> _logger;
-    // Семафор на рівні міст — 5 міст паралельно, всередині кожного міста категорії теж паралельні
     private readonly SemaphoreSlim _semaphore = new(5);
 
     private readonly string[] _citySlugs =
@@ -61,16 +60,15 @@ public class ConcertUaScraper : IEventScraper
         using var httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
         httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
-        _logger.LogInformation("🚀 Початок скрапінгу Concert.ua по категоріях...");
+        _logger.LogInformation("🚀 Початок скрапінгу {Provider} по категоріях...", ProviderName);
 
         var cityTasks = _citySlugs.Select(async citySlug =>
         {
             await _semaphore.WaitAsync();
-            _logger.LogInformation("🏙️ Concert.ua: Сканування міста {City}...", citySlug.ToUpper());
+            _logger.LogInformation("🏙️ {Provider}: Сканування міста {City}...", ProviderName, citySlug.ToUpper());
 
             try
             {
-                // Всі категорії одного міста — паралельно
                 var categoryTasks = CategoryPaths.Select(async kvp =>
                 {
                     var (categoryKey, categoryPath) = kvp;
@@ -88,7 +86,6 @@ public class ConcertUaScraper : IEventScraper
                         return localEvents;
                     }
 
-                    // 302 = немає подій цієї категорії в місті
                     if (!response.IsSuccessStatusCode)
                     {
                         _logger.LogDebug("⚠️ {City}/{Category}: {Code} — пропускаємо", citySlug, categoryPath, (int)response.StatusCode);
@@ -127,7 +124,6 @@ public class ConcertUaScraper : IEventScraper
                                 if (string.IsNullOrEmpty(url)) continue;
                                 if (url.StartsWith("/")) url = "https://concert.ua" + url;
                                 
-                                // Обробка масиву або рядка для ImageUrl
                                 string imageUrl = "";
                                 if (node.TryGetProperty("image", out var imgProp))
                                 {
@@ -151,13 +147,10 @@ public class ConcertUaScraper : IEventScraper
                                     Description = description,
                                     Date = parsedDate.HasValue ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm") : startDateRaw,
                                     ParsedDate = parsedDate,
-                                    
-                                    // ОНОВЛЕНО: Пряме збереження в нижньому регістрі для ідеального пошуку в Elasticsearch
                                     City = citySlug.ToLowerInvariant(),
                                     CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLowerInvariant(), citySlug),
                                     Category = categoryKey,
-                                    ImageUrl = imageUrl,
-                                    ViewsCount = Random.Shared.Next(100, 300)
+                                    ImageUrl = imageUrl
                                 };
 
                                 newEvent.GenerateDeterministicId();
@@ -175,7 +168,6 @@ public class ConcertUaScraper : IEventScraper
 
                 var results = await Task.WhenAll(categoryTasks);
 
-                // Зливаємо результати всіх категорій, фільтруємо дублікати по URL
                 int cityEventsCount = 0;
                 foreach (var ev in results.SelectMany(r => r))
                 {
@@ -190,9 +182,9 @@ public class ConcertUaScraper : IEventScraper
                 }
 
                 if (cityEventsCount > 0)
-                    _logger.LogInformation("✅ Concert.ua: Отримано {Count} подій для міста {City}", cityEventsCount, citySlug.ToUpper());
+                    _logger.LogInformation("✅ {Provider}: Отримано {Count} подій для міста {City}", ProviderName, cityEventsCount, citySlug.ToUpper());
                 else
-                    _logger.LogWarning("⚠️ Concert.ua: Подій не знайдено для міста {City}", citySlug.ToUpper());
+                    _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName, citySlug.ToUpper());
             }
             catch (Exception ex)
             {
@@ -206,7 +198,7 @@ public class ConcertUaScraper : IEventScraper
 
         await Task.WhenAll(cityTasks);
 
-        _logger.LogInformation("🏁 Concert.ua: Збір завершено. Фінальний звіт провайдера:");
+        _logger.LogInformation("🏁 {Provider}: Збір завершено. Фінальний звіт провайдера:", ProviderName);
         _logger.LogInformation("=================================================");
 
         var statsByCity = allCollectedEvents.GroupBy(e => e.CityUk).OrderByDescending(g => g.Count());
@@ -222,7 +214,7 @@ public class ConcertUaScraper : IEventScraper
             _logger.LogInformation("   🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
 
         _logger.LogInformation("=================================================");
-        _logger.LogInformation("🏁 Concert.ua: Всього знайдено унікальних подій: {Count}", allCollectedEvents.Count);
+        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName, allCollectedEvents.Count);
 
         return allCollectedEvents;
     }
