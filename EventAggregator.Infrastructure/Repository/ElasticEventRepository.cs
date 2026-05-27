@@ -22,22 +22,17 @@ public class ElasticEventRepository : IEventRepository
         var exists = await _client.Indices.ExistsAsync(IndexName, ct);
         if (exists.Exists) return;
 
-        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch з українською морфологією...", IndexName);
+        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch...", IndexName);
 
         await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
-                    // 🌟 Для всіх текстових полів використовуємо .Text()
-                    .Text(t => t.Title, g => g.Analyzer("ukrainian")) 
-                    .Text(t => t.Description, g => g.Analyzer("ukrainian")) 
-                    .Text(t => t.Category, g => g
-                        .Analyzer("ukrainian")
-                        .Fields(f => f
-                            .Keyword("keyword")
-                        )
-                    )
-                    .Keyword(k => k.City)
-                    .Text(t => t.CityUk, g => g.Analyzer("ukrainian"))
+                        .Text(t => t.Title, g => g.Analyzer("ukrainian")) 
+                        .Text(t => t.Description, g => g.Analyzer("ukrainian")) 
+                        .Keyword(k => k.Category) // 🌟 Спрощено: чистий Keyword
+                        .Keyword(k => k.City)     // 🌟 Чистий Keyword
+                        .Text(t => t.CityUk, g => g.Analyzer("ukrainian"))
+                        .Date(d => d.ParsedDate)  // 🌟 Поле дати для правильного сортування
                 )
             ), ct);
     }
