@@ -22,13 +22,12 @@ public class ConcertUaScraper : IEventScraper
     // Максимум 5 міст паралельно
     private readonly SemaphoreSlim _semaphore = new(5);
 
-    private readonly string[] _citySlugs =
+    private readonly string[] _citySlugs = 
     {
-        "uzhhorod"
-        // "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        // "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        // "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        // "lutsk", "mykolaiv", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private static readonly Dictionary<string, string> CategoryPaths = new()

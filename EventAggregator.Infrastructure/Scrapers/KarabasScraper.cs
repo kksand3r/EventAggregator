@@ -14,12 +14,12 @@ public class KarabasScraper : IEventScraper
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
 
-    private readonly string[] _citySlugs =
+    private readonly string[] _citySlugs = 
     {
-        "uzhhorod" // "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private readonly string[] _categories =
