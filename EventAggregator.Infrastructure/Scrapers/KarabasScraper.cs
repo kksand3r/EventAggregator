@@ -144,17 +144,26 @@ public class KarabasScraper : IEventScraper
                                                     description = Regex.Replace(description, @"\s+", " ").Trim();
                                                 }
 
+                                                // ==========================================
+                                                // ВИПРАВЛЕННЯ ЧАСОВОГО ПОЯСУ KARABAS
+                                                // ==========================================
                                                 DateTime finalParsedDate = DateTime.UtcNow.AddDays(2); 
                                                 string displayDate = startDateStr;
 
                                                 if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
                                                 {
-                                                    finalParsedDate = parsedOffset.DateTime;
-                                                    displayDate = parsedOffset.ToString("dd.MM.yyyy HH:mm");
+                                                    // Через баг Karabas справжній локальний час "захований" у властивості UtcDateTime
+                                                    DateTime trueLocalClockTime = parsedOffset.UtcDateTime;
+                                                    
+                                                    // Зберігаємо для БД як справжній UTC (-3 години від Києва)
+                                                    finalParsedDate = trueLocalClockTime.AddHours(-3); 
+                                                    
+                                                    // Форматуємо рядок для фронтенду
+                                                    displayDate = trueLocalClockTime.ToString("dd.MM.yyyy HH:mm");
                                                 }
                                                 else if (DateTime.TryParse(startDateStr, out var parsedNet))
                                                 {
-                                                    finalParsedDate = parsedNet;
+                                                    finalParsedDate = parsedNet.AddHours(-3);
                                                     displayDate = parsedNet.ToString("dd.MM.yyyy HH:mm");
                                                 }
 
@@ -184,10 +193,7 @@ public class KarabasScraper : IEventScraper
                                             }
                                         }
                                     }
-                                    catch (Exception)
-                                    {
-                                        // Ігноруємо CollectionPage / BreadcrumbList
-                                    }
+                                    catch (Exception) { }
                                 }
 
                                 if (parsedOnPageCount > 0)
@@ -224,24 +230,6 @@ public class KarabasScraper : IEventScraper
                     _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName, cityLower.ToUpper());
             }
         }
-
-        _logger.LogInformation("🏁 {Provider}: Збір завершено. Фінальний звіт провайдера:", ProviderName);
-        _logger.LogInformation("=================================================");
-
-        var statsByCity = allEvents.GroupBy(e => e.CityUk).OrderByDescending(g => g.Count());
-        _logger.LogInformation("📌 Розподіл за МІСТАМИ:");
-        foreach (var group in statsByCity)
-            _logger.LogInformation("   📍 {City}: {Count} подій", group.Key, group.Count());
-
-        _logger.LogInformation("-------------------------------------------------");
-
-        var statsByCategory = allEvents.GroupBy(e => e.Category).OrderByDescending(g => g.Count());
-        _logger.LogInformation("📌 Розподіл за КАТЕГОРІЯМИ:");
-        foreach (var group in statsByCategory)
-            _logger.LogInformation("   🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
-
-        _logger.LogInformation("=================================================");
-        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName, allEvents.Count);
 
         return allEvents;
     }
