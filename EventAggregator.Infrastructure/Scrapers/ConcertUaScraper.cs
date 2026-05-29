@@ -56,18 +56,6 @@ public class ConcertUaScraper : IEventScraper
         _logger = logger;
     }
 
-    private TimeZoneInfo GetKyivTimeZone()
-    {
-        try 
-        { 
-            return TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv"); 
-        }
-        catch 
-        { 
-            return TimeZoneInfo.FindSystemTimeZoneById("FLE Standard Time"); 
-        }
-    }
-    
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
         var allCollectedEvents = new List<ScrapedEvent>();
@@ -150,14 +138,9 @@ public class ConcertUaScraper : IEventScraper
 
                                 DateTime? parsedDate = null;
                                 if (!string.IsNullOrEmpty(startDateRaw) && DateTimeOffset.TryParse(startDateRaw, out var dto))
-                                {
-                                    var kyivTime = TimeZoneInfo.ConvertTime(dto, GetKyivTimeZone());
-                                    parsedDate = kyivTime.DateTime;
-                                }
+                                    parsedDate = dto.DateTime;
                                 else if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
-                                {
                                     parsedDate = dt;
-                                }
 
                                 var newEvent = new ScrapedEvent
                                 {

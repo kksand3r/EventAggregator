@@ -36,18 +36,6 @@ public class KarabasScraper : IEventScraper
     };
 
     public KarabasScraper(ILogger<KarabasScraper> logger) => _logger = logger;
-    
-    private TimeZoneInfo GetKyivTimeZone()
-    {
-        try 
-        { 
-            return TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv"); 
-        }
-        catch 
-        { 
-            return TimeZoneInfo.FindSystemTimeZoneById("FLE Standard Time"); 
-        }
-    }
 
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
@@ -161,10 +149,8 @@ public class KarabasScraper : IEventScraper
 
                                                 if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
                                                 {
-                                                    // Примусово конвертуємо час у Київський часовий пояс
-                                                    var kyivTime = TimeZoneInfo.ConvertTime(parsedOffset, GetKyivTimeZone());
-                                                    finalParsedDate = kyivTime.DateTime;
-                                                    displayDate = kyivTime.ToString("dd.MM.yyyy HH:mm");
+                                                    finalParsedDate = parsedOffset.DateTime;
+                                                    displayDate = parsedOffset.ToString("dd.MM.yyyy HH:mm");
                                                 }
                                                 else if (DateTime.TryParse(startDateStr, out var parsedNet))
                                                 {
