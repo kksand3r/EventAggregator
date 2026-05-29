@@ -27,6 +27,7 @@ public class ConcertUaScraper : IEventScraper
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
+    // Залишено тільки ваші 7 оригінальних категорій
     private static readonly Dictionary<string, string> CategoryPaths = new()
     {
         { "concerts",  "concerts"  },
@@ -38,6 +39,7 @@ public class ConcertUaScraper : IEventScraper
         { "festivals", "festivals" }
     };
 
+    // Ключі словника тепер стовідсотково відповідають системним слагам міст у нижньому регістрі
     private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)
     {
         { "kyiv", "Київ" }, { "odesa", "Одеса" }, { "dnipro", "Дніпро" }, { "lviv", "Львів" },
@@ -54,6 +56,18 @@ public class ConcertUaScraper : IEventScraper
         _logger = logger;
     }
 
+    private TimeZoneInfo GetKyivTimeZone()
+    {
+        try 
+        { 
+            return TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv"); 
+        }
+        catch 
+        { 
+            return TimeZoneInfo.FindSystemTimeZoneById("FLE Standard Time"); 
+        }
+    }
+    
     public async Task<List<ScrapedEvent>> ScrapeAsync(IBrowser browser)
     {
         var allCollectedEvents = new List<ScrapedEvent>();
@@ -77,10 +91,21 @@ public class ConcertUaScraper : IEventScraper
                     string targetUrl = $"https://concert.ua/uk/catalog/{citySlug}/{categoryPath}";
 
                     HttpResponseMessage response;
-                    try { response = await httpClient.GetAsync(targetUrl); }
-                    catch { return localEvents; }
+                    try
+                    {
+                        response = await httpClient.GetAsync(targetUrl);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug("Помилка запиту {Url}: {Msg}", targetUrl, ex.Message);
+                        return localEvents;
+                    }
 
-                    if (!response.IsSuccessStatusCode) return localEvents;
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogDebug("⚠️ {City}/{Category}: {Code} — пропускаємо", citySlug, categoryPath, (int)response.StatusCode);
+                        return localEvents;
+                    }
 
                     string htmlContent = await response.Content.ReadAsStringAsync();
                     var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>", RegexOptions.IgnoreCase);
@@ -101,7 +126,8 @@ public class ConcertUaScraper : IEventScraper
 
                             foreach (var node in elementsToProcess)
                             {
-                                if (!node.TryGetProperty("@type", out var typeProp) || !(typeProp.GetString()?.Contains("Event") ?? false))
+                                if (!node.TryGetProperty("@type", out var typeProp) ||
+                                    !(typeProp.GetString()?.Contains("Event") ?? false))
                                     continue;
 
                                 string title = node.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Без назви" : "Без назви";
@@ -116,27 +142,21 @@ public class ConcertUaScraper : IEventScraper
                                 string imageUrl = "";
                                 if (node.TryGetProperty("image", out var imgProp))
                                 {
-                                    if (imgProp.ValueKind == JsonValueKind.String) imageUrl = imgProp.GetString() ?? "";
-                                    else if (imgProp.ValueKind == JsonValueKind.Array) imageUrl = imgProp.EnumerateArray().FirstOrDefault().GetString() ?? "";
+                                    if (imgProp.ValueKind == JsonValueKind.String)
+                                        imageUrl = imgProp.GetString() ?? "";
+                                    else if (imgProp.ValueKind == JsonValueKind.Array)
+                                        imageUrl = imgProp.EnumerateArray().FirstOrDefault().GetString() ?? "";
                                 }
 
-                                // ==========================================
-                                // ВИПРАВЛЕННЯ ЧАСОВОГО ПОЯСУ CONCERT.UA
-                                // ==========================================
                                 DateTime? parsedDate = null;
-                                string displayDate = startDateRaw;
-
                                 if (!string.IsNullOrEmpty(startDateRaw) && DateTimeOffset.TryParse(startDateRaw, out var dto))
                                 {
-                                    // Concert.ua віддає правильний локальний час у властивості DateTime
-                                    DateTime localClockTime = dto.DateTime;
-                                    parsedDate = localClockTime.AddHours(-3); // Зберігаємо як UTC
-                                    displayDate = localClockTime.ToString("dd.MM.yyyy HH:mm");
+                                    var kyivTime = TimeZoneInfo.ConvertTime(dto, GetKyivTimeZone());
+                                    parsedDate = kyivTime.DateTime;
                                 }
                                 else if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
                                 {
-                                    parsedDate = dt.AddHours(-3);
-                                    displayDate = dt.ToString("dd.MM.yyyy HH:mm");
+                                    parsedDate = dt;
                                 }
 
                                 var newEvent = new ScrapedEvent
@@ -145,7 +165,7 @@ public class ConcertUaScraper : IEventScraper
                                     Url = url,
                                     Source = ProviderName,
                                     Description = description,
-                                    Date = displayDate,
+                                    Date = parsedDate.HasValue ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm") : startDateRaw,
                                     ParsedDate = parsedDate,
                                     City = citySlug.ToLowerInvariant(),
                                     CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLowerInvariant(), citySlug),
@@ -157,26 +177,65 @@ public class ConcertUaScraper : IEventScraper
                                 localEvents.Add(newEvent);
                             }
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug("Помилка парсингу JSON-LD блоку: {Msg}", ex.Message);
+                        }
                     }
+
                     return localEvents;
                 });
 
                 var results = await Task.WhenAll(categoryTasks);
 
+                int cityEventsCount = 0;
                 foreach (var ev in results.SelectMany(r => r))
                 {
                     lock (allCollectedEvents)
                     {
                         if (!allCollectedEvents.Any(e => e.Url == ev.Url))
+                        {
                             allCollectedEvents.Add(ev);
+                            cityEventsCount++;
+                        }
                     }
                 }
+
+                if (cityEventsCount > 0)
+                    _logger.LogInformation("✅ {Provider}: Отримано {Count} подій для міста {City}", ProviderName, cityEventsCount, citySlug.ToUpper());
+                else
+                    _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName, citySlug.ToUpper());
             }
-            finally { _semaphore.Release(); }
+            catch (Exception ex)
+            {
+                _logger.LogError("❌ Помилка збору міста {City}: {Message}", citySlug, ex.Message);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
         });
 
         await Task.WhenAll(cityTasks);
+
+        _logger.LogInformation("🏁 {Provider}: Збір завершено. Финальний звіт провайдера:", ProviderName);
+        _logger.LogInformation("=================================================");
+
+        var statsByCity = allCollectedEvents.GroupBy(e => e.CityUk).OrderByDescending(g => g.Count());
+        _logger.LogInformation("📌 Розподіл за МІСТАМИ:");
+        foreach (var group in statsByCity)
+            _logger.LogInformation("   📍 {City}: {Count} подій", group.Key, group.Count());
+
+        _logger.LogInformation("-------------------------------------------------");
+
+        var statsByCategory = allCollectedEvents.GroupBy(e => e.Category).OrderByDescending(g => g.Count());
+        _logger.LogInformation("📌 Розподіл за КАТЕГОРІЯМИ:");
+        foreach (var group in statsByCategory)
+            _logger.LogInformation("   🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
+
+        _logger.LogInformation("=================================================");
+        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName, allCollectedEvents.Count);
+
         return allCollectedEvents;
     }
 }
