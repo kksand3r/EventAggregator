@@ -15,10 +15,10 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs = 
     {
-        "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
-        "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
-        "chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
-        "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
+        "kyiv" //"odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
+        //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
+        //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
     private readonly string[] _categories =
@@ -149,8 +149,8 @@ public class KarabasScraper : IEventScraper
 
                                                 if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
                                                 {
-                                                    finalParsedDate = parsedOffset.DateTime;
-                                                    displayDate = parsedOffset.ToString("dd.MM.yyyy HH:mm");
+                                                    finalParsedDate = parsedOffset.UtcDateTime;
+                                                    displayDate = parsedOffset.UtcDateTime.ToString("dd.MM.yyyy HH:mm");
                                                 }
                                                 else if (DateTime.TryParse(startDateStr, out var parsedNet))
                                                 {

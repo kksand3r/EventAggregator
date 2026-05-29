@@ -138,7 +138,7 @@ public class ConcertUaScraper : IEventScraper
 
                                 DateTime? parsedDate = null;
                                 if (!string.IsNullOrEmpty(startDateRaw) && DateTimeOffset.TryParse(startDateRaw, out var dto))
-                                    parsedDate = dto.DateTime;
+                                    parsedDate = dto.UtcDateTime;
                                 else if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
                                     parsedDate = dt;
 
