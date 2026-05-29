@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
-using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 
