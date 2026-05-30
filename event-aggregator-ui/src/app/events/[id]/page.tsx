@@ -272,7 +272,7 @@ export default function EventDetailsPage() {
                                     href={event.url || "#"}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="w-full sm:w-auto inline-flex items-center justify-center gap-3 text-white px-10 py-5 rounded-2xl font-black shadow-xl hover:opacity-90 transition-all active:scale-95 text-lg group"
+                                    className="w-auto inline-flex items-center justify-center gap-3 text-white px-10 py-5 rounded-2xl font-black shadow-xl hover:opacity-90 transition-all active:scale-95 text-lg group"
                                     style={{ background: "rgba(15,15,20,0.88)" }}
                                 >
                                     <Ticket className="h-5 w-5 group-hover:rotate-12 transition-transform" />
