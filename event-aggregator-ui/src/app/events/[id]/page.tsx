@@ -167,7 +167,6 @@ export default function EventDetailsPage() {
                             <div
                                 className="relative w-full max-w-[220px] md:max-w-none aspect-[2/3] rounded-2xl overflow-hidden"
                                 style={{
-                                    transform: "rotate(-1.5deg)",
                                     boxShadow: `0 32px 80px rgba(${r},${g},${b},0.45), 0 8px 24px rgba(0,0,0,0.25)`,
                                 }}
                             >
