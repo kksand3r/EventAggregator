@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { Calendar, MapPin, Eye, ArrowLeft, Loader2, Ticket, Sparkles } from "lucide-react";
 import EventCard from "@/components/EventCard";
 import { fetchEventById, fetchEvents, incrementView, fetchEventAiSummary, type EventListItem } from "@/lib/api";
 
-// Витягує домінантний колір з постера через Canvas API
 function extractDominantColor(imageUrl: string): Promise<string> {
     return new Promise((resolve) => {
         const img = new window.Image();
@@ -23,15 +22,10 @@ function extractDominantColor(imageUrl: string): Promise<string> {
                 const data = ctx.getImageData(0, 0, 40, 40).data;
                 let r = 0, g = 0, b = 0, count = 0;
                 for (let i = 0; i < data.length; i += 16) {
-                    r += data[i];
-                    g += data[i + 1];
-                    b += data[i + 2];
-                    count++;
+                    r += data[i]; g += data[i + 1]; b += data[i + 2]; count++;
                 }
                 resolve(`${Math.round(r / count)},${Math.round(g / count)},${Math.round(b / count)}`);
-            } catch {
-                resolve("120,80,200");
-            }
+            } catch { resolve("120,80,200"); }
         };
         img.onerror = () => resolve("120,80,200");
         img.src = imageUrl;
@@ -51,29 +45,18 @@ export default function EventDetailsPage() {
     const [colorReady, setColorReady] = useState(false);
 
     const handleGoBack = () => {
-        if (typeof window !== "undefined" && window.history.length > 1) {
-            router.back();
-        } else {
-            router.push("/?tab=catalog");
-        }
+        if (typeof window !== "undefined" && window.history.length > 1) router.back();
+        else router.push("/?tab=catalog");
     };
 
     useEffect(() => {
-        if (!id) {
-            setEvent(null);
-            setLoading(false);
-            return;
-        }
+        if (!id) { setEvent(null); setLoading(false); return; }
         let cancelled = false;
         setLoading(true);
-
         fetchEventById(id)
             .then((data) => {
                 if (cancelled) return;
-                if (!data || !data.id) {
-                    setEvent(null);
-                    return;
-                }
+                if (!data || !data.id) { setEvent(null); return; }
                 setEvent(data);
                 incrementView(id).catch(() => {});
                 fetchEventAiSummary(id)
@@ -82,16 +65,11 @@ export default function EventDetailsPage() {
             })
             .catch(() => { if (!cancelled) setEvent(null); })
             .finally(() => { if (!cancelled) setLoading(false); });
-
         return () => { cancelled = true; };
     }, [id]);
 
-    // Витягуємо колір щойно отримали подію з постером
     useEffect(() => {
-        if (!event?.image) {
-            setColorReady(true);
-            return;
-        }
+        if (!event?.image) { setColorReady(true); return; }
         setColorReady(false);
         extractDominantColor(event.image).then((color) => {
             setDominantColor(color);
@@ -103,7 +81,6 @@ export default function EventDetailsPage() {
         const eventId = event?.id;
         const category = event?.category;
         if (!eventId || !category) return;
-
         let cancelled = false;
         fetchEvents({ category, page: 1, pageSize: 4 })
             .then((res) => {
@@ -111,7 +88,6 @@ export default function EventDetailsPage() {
                 setRelated(res.data.filter(e => e.id !== eventId).slice(0, 3));
             })
             .catch(() => setRelated([]));
-
         return () => { cancelled = true; };
     }, [event?.id, event?.category]);
 
@@ -143,14 +119,10 @@ export default function EventDetailsPage() {
     }
 
     const [r, g, b] = dominantColor.split(",").map(Number);
-    // Трохи насичуємо колір для фону
-    const bgColor = `rgba(${r},${g},${b},0.18)`;
-    const bgColorStrong = `rgba(${r},${g},${b},0.32)`;
     const accentColor = `rgb(${r},${g},${b})`;
 
     return (
         <div className="min-h-screen gradient-bg">
-            {/* Sticky header */}
             <header className="sticky top-0 z-50 bg-[rgba(230,230,240,0.75)] backdrop-blur-[22px] border-b border-[rgba(210,210,225,0.8)]">
                 <button
                     onClick={handleGoBack}
@@ -160,160 +132,133 @@ export default function EventDetailsPage() {
                 </button>
             </header>
 
-            <main className="max-w-6xl mx-auto px-4 py-12 pb-24">
+            <main className="max-w-5xl mx-auto px-4 py-12 pb-24">
 
-                {/* Головна картка з blur-фоном */}
+                {/* Головна картка — чиста біла, як аркуш паперу на столі */}
                 <div
-                    className="relative rounded-[2.5rem] overflow-hidden shadow-2xl mb-16"
+                    className="bg-white rounded-3xl shadow-[0_8px_48px_rgba(0,0,0,0.10),0_2px_12px_rgba(0,0,0,0.06)] mb-10 overflow-hidden"
                     style={{
                         opacity: colorReady ? 1 : 0,
-                        transition: "opacity 0.5s ease",
+                        transition: "opacity 0.4s ease",
                     }}
                 >
-                    {/* Шар 1: розмитий постер як фон */}
-                    {event.image && (
-                        <div
-                            className="absolute inset-0 z-0"
-                            aria-hidden="true"
-                            style={{ transform: "scale(1.08)" }}
-                        >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                                src={event.image}
-                                alt=""
-                                className="w-full h-full object-cover"
-                                style={{ filter: "blur(48px) saturate(1.6) brightness(0.7)" }}
-                            />
-                        </div>
-                    )}
+                    <div className="flex flex-col sm:flex-row gap-0">
 
-                    {/* Шар 2: кольоровий оверлей поверх blur */}
-                    <div
-                        className="absolute inset-0 z-[1]"
-                        style={{
-                            background: `linear-gradient(135deg, ${bgColorStrong} 0%, rgba(255,255,255,0.45) 60%, rgba(255,255,255,0.6) 100%)`,
-                        }}
-                    />
-
-                    {/* Шар 3: контент */}
-                    <div className="relative z-10 flex flex-col">
-                        <div className="flex flex-col md:flex-row items-stretch gap-0">
-
-                            {/* Постер */}
-                            <div className="flex items-center justify-center p-10 md:p-12 md:w-5/12 shrink-0">
+                        {/* Постер — «фізична картка» зі слабким нахилом */}
+                        <div className="flex items-start justify-center p-8 sm:p-10 sm:w-[280px] shrink-0">
+                            <div
+                                className="relative w-full max-w-[200px] sm:max-w-none aspect-[2/3] rounded-2xl overflow-hidden"
+                                style={{
+                                    boxShadow: `0 24px 56px rgba(${r},${g},${b},0.35), 0 6px 18px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10)`,
+                                    transform: "rotate(-1.5deg)",
+                                }}
+                            >
+                                <Image
+                                    src={event.image || "/placeholder-event.jpg"}
+                                    alt={event.title || "Event poster"}
+                                    fill
+                                    className="object-cover"
+                                    priority
+                                    unoptimized
+                                />
+                                {/* Категорія — смужка знизу постера */}
                                 <div
-                                    className="relative w-full max-w-[260px] aspect-[2/3] rounded-2xl overflow-hidden"
-                                    style={{
-                                        boxShadow: `0 32px 80px rgba(${r},${g},${b},0.45), 0 8px 24px rgba(0,0,0,0.25)`,
-                                    }}
+                                    className="absolute bottom-0 inset-x-0 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white text-center"
+                                    style={{ background: `rgba(${r},${g},${b},0.85)` }}
                                 >
-                                    <Image
-                                        src={event.image || "/placeholder-event.jpg"}
-                                        alt={event.title || "Event poster"}
-                                        fill
-                                        className="object-cover"
-                                        priority
-                                        unoptimized
-                                    />
-                                    {/* Бейдж переглядів */}
-                                    <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/50 backdrop-blur-md rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white">
-                                        <Eye className="h-3.5 w-3.5" />
-                                        {(event.viewCount ?? 0).toLocaleString("uk-UA")}
-                                    </div>
-                                    {/* Бейдж категорії */}
-                                    <div
-                                        className="absolute top-3 right-3 rounded-lg px-2.5 py-1.5 text-[11px] font-black text-white uppercase tracking-widest"
-                                        style={{ background: accentColor }}
-                                    >
-                                        {event.category || "Подія"}
-                                    </div>
+                                    {event.category || "Подія"}
                                 </div>
                             </div>
+                        </div>
 
-                            {/* Інфо */}
-                            <div className="flex-1 flex flex-col justify-center px-8 pb-10 pt-4 md:py-14 md:pr-14">
-                                <h1 className="text-3xl md:text-4xl lg:text-5xl font-black mb-10 leading-[1.15] tracking-tight text-slate-950">
+                        {/* Права частина — весь текст */}
+                        <div className="flex-1 flex flex-col justify-between px-6 pb-8 pt-8 sm:pt-10 sm:pr-10">
+                            <div>
+                                {/* Перегляди */}
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Eye className="h-3.5 w-3.5 text-slate-400" />
+                                    <span className="text-xs text-slate-400 font-semibold">
+                                        {(event.viewCount ?? 0).toLocaleString("uk-UA")} переглядів
+                                    </span>
+                                </div>
+
+                                {/* Заголовок */}
+                                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black leading-[1.2] tracking-tight text-slate-950 mb-8">
                                     {event.title}
                                 </h1>
 
                                 {/* Чипи дата / місто */}
-                                <div className="flex flex-wrap gap-3 mb-10">
-                                    <div
-                                        className="flex items-center gap-3 rounded-2xl px-4 py-3 backdrop-blur-md border border-white/50"
-                                        style={{ background: "rgba(255,255,255,0.72)" }}
-                                    >
+                                <div className="flex flex-wrap gap-3 mb-8">
+                                    <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5">
                                         <div
-                                            className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0"
+                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
                                             style={{ background: accentColor }}
                                         >
-                                            <Calendar className="h-4 w-4" />
+                                            <Calendar className="h-3.5 w-3.5" />
                                         </div>
                                         <div>
-                                            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black">Коли</p>
-                                            <span className="text-sm font-extrabold text-slate-900">{event.date || "Дата уточнюється"}</span>
+                                            <p className="text-[9px] uppercase tracking-widest text-slate-400 font-black leading-none mb-0.5">Коли</p>
+                                            <span className="text-sm font-bold text-slate-800">{event.date || "Дата уточнюється"}</span>
                                         </div>
                                     </div>
 
-                                    <div
-                                        className="flex items-center gap-3 rounded-2xl px-4 py-3 backdrop-blur-md border border-white/50"
-                                        style={{ background: "rgba(255,255,255,0.55)" }}
-                                    >
-                                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 bg-fuchsia-500">
-                                            <MapPin className="h-4 w-4" />
+                                    <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5">
+                                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0 bg-fuchsia-500">
+                                            <MapPin className="h-3.5 w-3.5" />
                                         </div>
                                         <div>
-                                            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black">Де</p>
-                                            <span className="text-sm font-extrabold text-slate-900">{event.city || "Місто уточнюється"}</span>
+                                            <p className="text-[9px] uppercase tracking-widest text-slate-400 font-black leading-none mb-0.5">Де</p>
+                                            <span className="text-sm font-bold text-slate-800">{event.city || "Місто уточнюється"}</span>
                                         </div>
                                     </div>
                                 </div>
+                            </div>
 
-                                <a
-                                    href={event.url || "#"}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="w-auto inline-flex items-center justify-center gap-3 text-white px-10 py-5 rounded-2xl font-black shadow-xl hover:opacity-90 transition-all active:scale-95 text-lg group"
-                                    style={{ background: "rgba(15,15,20,0.88)" }}
+                            {/* Кнопка */}
+                            <a
+                                href={event.url || "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="self-start inline-flex items-center gap-2.5 text-white px-8 py-4 rounded-2xl font-black shadow-lg hover:opacity-90 transition-all active:scale-95 text-base group"
+                                style={{ background: "rgb(15,15,20)" }}
+                            >
+                                <Ticket className="h-4 w-4 group-hover:rotate-12 transition-transform" />
+                                Купити квиток
+                            </a>
+                        </div>
+                    </div>
+
+                    {/* AI Summary — всередині картки, відділена від основного контенту */}
+                    {aiSummary && (
+                        <div className="mx-6 mb-6 mt-2 rounded-2xl p-5 bg-slate-50 border border-slate-100 flex gap-3 items-start">
+                            <div
+                                className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 mt-0.5"
+                                style={{ background: accentColor }}
+                            >
+                                <Sparkles className="h-3.5 w-3.5" />
+                            </div>
+                            <div>
+                                <p
+                                    className="text-[9px] font-black uppercase tracking-[0.25em] mb-1.5"
+                                    style={{ color: accentColor }}
                                 >
-                                    <Ticket className="h-5 w-5 group-hover:rotate-12 transition-transform" />
-                                    Купити квиток
-                                </a>
+                                    Чому варто піти · AI Analysis
+                                </p>
+                                <p className="text-slate-700 leading-relaxed text-sm font-medium italic">
+                                    {aiSummary}
+                                </p>
                             </div>
                         </div>
-
-                        {/* AI Summary — всередині картки, glass-стиль */}
-                        {aiSummary && (
-                            <div
-                                className="mx-6 mb-6 rounded-2xl p-6 backdrop-blur-md border border-white/40 flex gap-4 items-start"
-                                style={{ background: "rgba(255,255,255,0.72)" }}
-                            >
-                                <div
-                                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 mt-0.5"
-                                    style={{ background: accentColor }}
-                                >
-                                    <Sparkles className="h-4 w-4" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.25em] mb-2"
-                                       style={{ color: accentColor }}>
-                                        Чому варто піти · AI Analysis
-                                    </p>
-                                    <p className="text-slate-900 leading-relaxed text-base font-medium italic">
-                                        {aiSummary}
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    )}
                 </div>
 
                 {/* Схожі події */}
                 {related.length > 0 && (
                     <section className="mt-16">
-                        <h2 className="text-3xl font-black text-slate-950 tracking-tighter mb-10 px-1">
+                        <h2 className="text-2xl font-black text-slate-950 tracking-tighter mb-8 px-1">
                             Вам також сподобається
                         </h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {related.map((e) => <EventCard key={e.id} event={e} />)}
                         </div>
                     </section>
