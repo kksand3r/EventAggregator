@@ -167,7 +167,7 @@ export default function EventDetailsPage() {
                             <div
                                 className="relative w-full max-w-[220px] md:max-w-none aspect-[2/3] rounded-2xl overflow-hidden"
                                 style={{
-                                    boxShadow: `0 16px 40px rgba(${r},${g},${b},0.30), 0 4px 12px rgba(0,0,0,0.15)`,
+                                    boxShadow: `0 16px 40px rgba(${r},${g},${b},0.30z), 0 4px 12px rgba(0,0,0,0.15)`,
                                 }}
                             >
                                 <Image
