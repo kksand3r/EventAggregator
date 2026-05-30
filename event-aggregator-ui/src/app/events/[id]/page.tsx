@@ -196,7 +196,7 @@ export default function EventDetailsPage() {
                         <div className="flex-1 p-10 md:p-16 lg:p-20 flex flex-col justify-center relative bg-white/40">
                             <div className="relative z-10">
                                 <h1 className="text-4xl md:text-5xl lg:text-7xl font-black mb-12 leading-[1.1] tracking-tighter text-slate-950">
-                                    «{event.title}»
+                                    {event.title}
                                 </h1>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 mb-12">
                                     <div className="flex items-center gap-5">
@@ -234,7 +234,7 @@ export default function EventDetailsPage() {
 
                     {aiSummary && (
                         <div
-                            className="p-10 md:p-20 bg-gradient-to-b from-white/50 to-white/20 border-t border-white/60">
+                            className="pt-0 px-6 pb-20 md:px-20 md:pb-10 bg-gradient-to-b from-white/50 to-white/20 border-white/60">
                             <div className="max-w-4xl mx-auto">
                                 <div className="relative group">
                                     <div
@@ -250,7 +250,7 @@ export default function EventDetailsPage() {
                                             </h4>
                                         </div>
                                         <p className="text-white leading-relaxed text-xl md:text-2xl font-bold italic">
-                                            «{aiSummary}»
+                                            {aiSummary}
                                         </p>
                                     </div>
                                 </div>
