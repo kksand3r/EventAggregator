@@ -45,26 +45,44 @@ export default function EventDetailsPage() {
     const [colorReady, setColorReady] = useState(false);
 
     const handleGoBack = () => {
-        if (typeof window !== "undefined" && window.history.length > 1) router.back();
-        else router.push("/?tab=catalog");
+        if (typeof window !== "undefined" && window.history.length > 1) {
+            router.back();
+        } else {
+            router.push("/?tab=catalog");
+        }
     };
 
     useEffect(() => {
-        if (!id) { setEvent(null); setLoading(false); return; }
+        if (!id) {
+            setEvent(null);
+            setLoading(false);
+            return;
+        }
         let cancelled = false;
         setLoading(true);
+
         fetchEventById(id)
             .then((data) => {
                 if (cancelled) return;
-                if (!data || !data.id) { setEvent(null); return; }
+                if (!data || !data.id) {
+                    setEvent(null);
+                    return;
+                }
                 setEvent(data);
                 incrementView(id).catch(() => {});
                 fetchEventAiSummary(id)
-                    .then(summary => { if (!cancelled) setAiSummary(summary); })
+                    .then(summary => {
+                        if (!cancelled) setAiSummary(summary);
+                    })
                     .catch(() => {});
             })
-            .catch(() => { if (!cancelled) setEvent(null); })
-            .finally(() => { if (!cancelled) setLoading(false); });
+            .catch(() => {
+                if (!cancelled) setEvent(null);
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
         return () => { cancelled = true; };
     }, [id]);
 
@@ -81,20 +99,23 @@ export default function EventDetailsPage() {
         const eventId = event?.id;
         const category = event?.category;
         if (!eventId || !category) return;
+
         let cancelled = false;
-        fetchEvents({ category, page: 1, pageSize: 4 })
+        fetchEvents({ category: category, page: 1, pageSize: 4 })
             .then((res) => {
                 if (cancelled) return;
-                setRelated(res.data.filter(e => e.id !== eventId).slice(0, 3));
+                const list = res.data.filter(e => e.id !== eventId);
+                setRelated(list.slice(0, 3));
             })
             .catch(() => setRelated([]));
+
         return () => { cancelled = true; };
     }, [event?.id, event?.category]);
 
     if (loading || event === undefined) {
         return (
             <div className="min-h-screen gradient-bg flex items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-violet-500" />
+                <Loader2 className="h-10 w-10 animate-spin text-violet-500"/>
             </div>
         );
     }
@@ -107,11 +128,9 @@ export default function EventDetailsPage() {
                     <p className="text-sm text-slate-600 mb-6">
                         Цей квиток або ідентифікатор події більше не є актуальним чи відсутній у базі даних.
                     </p>
-                    <button
-                        onClick={() => router.push("/")}
-                        className="inline-flex items-center gap-2 bg-violet-600 text-white px-6 py-2.5 rounded-full font-bold hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200"
-                    >
-                        <ArrowLeft className="h-4 w-4" /> Повернутися на головну
+                    <button onClick={() => router.push('/')}
+                            className="inline-flex items-center gap-2 bg-violet-600 text-white px-6 py-2.5 rounded-full font-bold hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200">
+                        <ArrowLeft className="h-4 w-4"/> Повернутися на головну
                     </button>
                 </div>
             </div>
@@ -123,44 +142,48 @@ export default function EventDetailsPage() {
 
     return (
         <div className="min-h-screen gradient-bg">
-            <header className="sticky top-0 z-50 bg-[rgba(230,230,240,0.75)] backdrop-blur-[22px] border-b border-[rgba(210,210,225,0.8)]">
+            <header
+                className="sticky top-0 z-50 bg-[rgba(230,230,240,0.75)] backdrop-blur-[22px] border-b border-[rgba(210,210,225,0.8)]">
                 <button
                     onClick={handleGoBack}
                     className="inline-flex items-center gap-2 text-violet-800/90 font-bold hover:text-violet-600 max-w-6xl mx-auto px-4 py-4"
                 >
-                    <ArrowLeft className="h-5 w-5" />
+                    <ArrowLeft className="h-5 w-5"/>
                 </button>
             </header>
 
-            <main className="max-w-5xl mx-auto px-4 py-12 pb-24">
-
-                {/* Головна картка — чиста біла, як аркуш паперу на столі */}
+            <main className="max-w-6xl mx-auto px-4 py-12 pb-24">
                 <div
-                    className="bg-white rounded-3xl shadow-[0_8px_48px_rgba(0,0,0,0.10),0_2px_12px_rgba(0,0,0,0.06)] mb-10 overflow-hidden"
+                    className="card-glass rounded-[3rem] overflow-hidden shadow-2xl mb-16 flex flex-col border border-white/50 bg-white/20"
                     style={{
                         opacity: colorReady ? 1 : 0,
                         transition: "opacity 0.4s ease",
                     }}
                 >
-                    <div className="flex flex-col sm:flex-row gap-0">
+                    <div className="flex flex-col md:flex-row">
 
-                        {/* Постер — «фізична картка» зі слабким нахилом */}
-                        <div className="flex items-start justify-center p-8 sm:p-10 sm:w-[280px] shrink-0">
+                        {/* Постер — фізична картка з нахилом і кольоровою тінню */}
+                        <div className="flex items-center justify-center p-10 md:p-14 md:w-5/12 shrink-0">
                             <div
-                                className="relative w-full max-w-[200px] sm:max-w-none aspect-[2/3] rounded-2xl overflow-hidden"
+                                className="relative w-full max-w-[220px] md:max-w-none aspect-[2/3] rounded-2xl overflow-hidden"
                                 style={{
-                                    boxShadow: `0 24px 56px rgba(${r},${g},${b},0.35), 0 6px 18px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10)`,
                                     transform: "rotate(-1.5deg)",
+                                    boxShadow: `0 32px 80px rgba(${r},${g},${b},0.45), 0 8px 24px rgba(0,0,0,0.25)`,
                                 }}
                             >
                                 <Image
                                     src={event.image || "/placeholder-event.jpg"}
-                                    alt={event.title || "Event poster"}
+                                    alt={event.title || "Event Image"}
                                     fill
                                     className="object-cover"
                                     priority
                                     unoptimized
                                 />
+                                {/* Перегляди — лівий верхній кут */}
+                                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/50 backdrop-blur-md rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white">
+                                    <Eye className="h-3.5 w-3.5 shrink-0"/>
+                                    <span>{(event.viewCount ?? 0).toLocaleString("uk-UA")}</span>
+                                </div>
                                 {/* Категорія — смужка знизу постера */}
                                 <div
                                     className="absolute bottom-0 inset-x-0 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white text-center"
@@ -171,95 +194,79 @@ export default function EventDetailsPage() {
                             </div>
                         </div>
 
-                        {/* Права частина — весь текст */}
-                        <div className="flex-1 flex flex-col justify-between px-6 pb-8 pt-8 sm:pt-10 sm:pr-10">
-                            <div>
-                                {/* Перегляди */}
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Eye className="h-3.5 w-3.5 text-slate-400" />
-                                    <span className="text-xs text-slate-400 font-semibold">
-                                        {(event.viewCount ?? 0).toLocaleString("uk-UA")} переглядів
-                                    </span>
-                                </div>
-
-                                {/* Заголовок */}
-                                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black leading-[1.2] tracking-tight text-slate-950 mb-8">
-                                    {event.title}
+                        <div className="flex-1 p-10 md:p-16 lg:p-20 flex flex-col justify-center relative bg-white/40">
+                            <div className="relative z-10">
+                                <h1 className="text-4xl md:text-5xl lg:text-7xl font-black mb-12 leading-[1.1] tracking-tighter text-slate-950">
+                                    «{event.title}»
                                 </h1>
-
-                                {/* Чипи дата / місто */}
-                                <div className="flex flex-wrap gap-3 mb-8">
-                                    <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 mb-12">
+                                    <div className="flex items-center gap-5">
                                         <div
-                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
-                                            style={{ background: accentColor }}
-                                        >
-                                            <Calendar className="h-3.5 w-3.5" />
+                                            className="p-4 bg-violet-600 rounded-2xl text-white shadow-lg shadow-violet-200">
+                                            <Calendar className="h-6 w-6"/>
                                         </div>
                                         <div>
-                                            <p className="text-[9px] uppercase tracking-widest text-slate-400 font-black leading-none mb-0.5">Коли</p>
-                                            <span className="text-sm font-bold text-slate-800">{event.date || "Дата уточнюється"}</span>
+                                            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black mb-1">Коли</p>
+                                            <span className="text-xl font-extrabold text-slate-900">{event.date || "Дата уточнюється"}</span>
                                         </div>
                                     </div>
-
-                                    <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5">
-                                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0 bg-fuchsia-500">
-                                            <MapPin className="h-3.5 w-3.5" />
+                                    <div className="flex items-center gap-5">
+                                        <div
+                                            className="p-4 bg-fuchsia-500 rounded-2xl text-white shadow-lg shadow-fuchsia-200">
+                                            <MapPin className="h-6 w-6"/>
                                         </div>
                                         <div>
-                                            <p className="text-[9px] uppercase tracking-widest text-slate-400 font-black leading-none mb-0.5">Де</p>
-                                            <span className="text-sm font-bold text-slate-800">{event.city || "Місто уточнюється"}</span>
+                                            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black mb-1">Де</p>
+                                            <span className="text-xl font-extrabold text-slate-900">{event.city || "Місто уточнюється"}</span>
                                         </div>
                                     </div>
                                 </div>
+                                <a
+                                    href={event.url || "#"}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full sm:w-auto inline-flex items-center justify-center gap-4 bg-slate-950 text-white px-14 py-6 rounded-3xl font-black shadow-2xl hover:bg-violet-600 transition-all active:scale-95 text-xl group"
+                                >
+                                    <Ticket className="h-6 w-6 group-hover:rotate-12 transition-transform"/> Купити квиток
+                                </a>
                             </div>
-
-                            {/* Кнопка */}
-                            <a
-                                href={event.url || "#"}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="self-start inline-flex items-center gap-2.5 text-white px-8 py-4 rounded-2xl font-black shadow-lg hover:opacity-90 transition-all active:scale-95 text-base group"
-                                style={{ background: "rgb(15,15,20)" }}
-                            >
-                                <Ticket className="h-4 w-4 group-hover:rotate-12 transition-transform" />
-                                Купити квиток
-                            </a>
                         </div>
                     </div>
 
-                    {/* AI Summary — всередині картки, відділена від основного контенту */}
                     {aiSummary && (
-                        <div className="mx-6 mb-6 mt-2 rounded-2xl p-5 bg-slate-50 border border-slate-100 flex gap-3 items-start">
-                            <div
-                                className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 mt-0.5"
-                                style={{ background: accentColor }}
-                            >
-                                <Sparkles className="h-3.5 w-3.5" />
-                            </div>
-                            <div>
-                                <p
-                                    className="text-[9px] font-black uppercase tracking-[0.25em] mb-1.5"
-                                    style={{ color: accentColor }}
-                                >
-                                    Чому варто піти · AI Analysis
-                                </p>
-                                <p className="text-slate-700 leading-relaxed text-sm font-medium italic">
-                                    {aiSummary}
-                                </p>
+                        <div
+                            className="p-10 md:p-20 bg-gradient-to-b from-white/50 to-white/20 border-t border-white/60">
+                            <div className="max-w-4xl mx-auto">
+                                <div className="relative group">
+                                    <div
+                                        className="absolute -inset-1 bg-gradient-to-r from-violet-400 to-fuchsia-400 rounded-[2rem] blur opacity-15 group-hover:opacity-25 transition duration-1000"></div>
+                                    <div
+                                        className="relative p-8 md:p-12 rounded-[2.5rem] bg-gradient-to-br from-violet-600 via-violet-700 to-indigo-800 shadow-2xl border border-white/10">
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                                                <Sparkles className="h-5 w-5 text-white"/>
+                                            </div>
+                                            <h4 className="text-[11px] font-black uppercase tracking-[0.3em] text-violet-100/90">
+                                                Чому варто піти (AI Analysis)
+                                            </h4>
+                                        </div>
+                                        <p className="text-white leading-relaxed text-xl md:text-2xl font-bold italic">
+                                            «{aiSummary}»
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* Схожі події */}
                 {related.length > 0 && (
-                    <section className="mt-16">
-                        <h2 className="text-2xl font-black text-slate-950 tracking-tighter mb-8 px-1">
-                            Вам також сподобається
-                        </h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {related.map((e) => <EventCard key={e.id} event={e} />)}
+                    <section className="mt-32">
+                        <div className="flex items-end justify-between mb-12 px-4">
+                            <h2 className="text-4xl font-black text-slate-950 tracking-tighter">Вам також сподобається</h2>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-12">
+                            {related.map((e) => <EventCard key={e.id} event={e}/>)}
                         </div>
                     </section>
                 )}
