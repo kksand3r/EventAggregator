@@ -240,7 +240,7 @@ export default function EventDetailsPage() {
                                 <div className="flex flex-wrap gap-3 mb-10">
                                     <div
                                         className="flex items-center gap-3 rounded-2xl px-4 py-3 backdrop-blur-md border border-white/50"
-                                        style={{ background: "rgba(255,255,255,0.55)" }}
+                                        style={{ background: "rgba(255,255,255,0.72)" }}
                                     >
                                         <div
                                             className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0"
@@ -285,7 +285,7 @@ export default function EventDetailsPage() {
                         {aiSummary && (
                             <div
                                 className="mx-6 mb-6 rounded-2xl p-6 backdrop-blur-md border border-white/40 flex gap-4 items-start"
-                                style={{ background: "rgba(255,255,255,0.45)" }}
+                                style={{ background: "rgba(255,255,255,0.72)" }}
                             >
                                 <div
                                     className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 mt-0.5"
@@ -298,7 +298,7 @@ export default function EventDetailsPage() {
                                        style={{ color: accentColor }}>
                                         Чому варто піти · AI Analysis
                                     </p>
-                                    <p className="text-slate-800 leading-relaxed text-base font-medium italic">
+                                    <p className="text-slate-900 leading-relaxed text-base font-medium italic">
                                         {aiSummary}
                                     </p>
                                 </div>
