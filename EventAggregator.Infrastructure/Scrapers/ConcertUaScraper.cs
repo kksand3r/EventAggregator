@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
+using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 
@@ -136,11 +137,7 @@ public class ConcertUaScraper : IEventScraper
                                         imageUrl = imgProp.EnumerateArray().FirstOrDefault().GetString() ?? "";
                                 }
 
-                                DateTime? parsedDate = null;
-                                if (!string.IsNullOrEmpty(startDateRaw) && DateTimeOffset.TryParse(startDateRaw, out var dto))
-                                    parsedDate = dto.UtcDateTime;
-                                else if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
-                                    parsedDate = dt;
+                                DateTime? parsedDate = DateParser.ParseUkrainianDate(startDateRaw);
 
                                 var newEvent = new ScrapedEvent
                                 {

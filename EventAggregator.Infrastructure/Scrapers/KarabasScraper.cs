@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
+using EventAggregator.Application.Parsing;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 
@@ -15,7 +16,7 @@ public class KarabasScraper : IEventScraper
 
     private readonly string[] _citySlugs = 
     {
-        "kyiv" //"odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
+        "kropyvnytskyi" //"odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         //"vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
         //"chernivtsi", "chernihiv", "sumy", "khmelnytskyi", "rivne",
         //"lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
@@ -143,20 +144,10 @@ public class KarabasScraper : IEventScraper
                                                         .Replace("Опис відсутній", "");
                                                     description = Regex.Replace(description, @"\s+", " ").Trim();
                                                 }
-
-                                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(2); 
-                                                string displayDate = startDateStr;
-
-                                                if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
-                                                {
-                                                    finalParsedDate = parsedOffset.UtcDateTime;
-                                                    displayDate = parsedOffset.UtcDateTime.ToString("dd.MM.yyyy HH:mm");
-                                                }
-                                                else if (DateTime.TryParse(startDateStr, out var parsedNet))
-                                                {
-                                                    finalParsedDate = parsedNet;
-                                                    displayDate = parsedNet.ToString("dd.MM.yyyy HH:mm");
-                                                }
+                                                
+                                                DateTime? parsedDate = DateParser.ParseUkrainianDate(startDateStr);
+                                                DateTime finalParsedDate = parsedDate ?? DateTime.UtcNow.AddDays(2); 
+                                                string displayDate = parsedDate?.ToString("dd.MM.yyyy HH:mm") ?? startDateStr;
 
                                                 lock (allEvents)
                                                 {
