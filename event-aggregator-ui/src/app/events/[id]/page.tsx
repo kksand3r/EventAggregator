@@ -167,7 +167,7 @@ export default function EventDetailsPage() {
                             <div
                                 className="relative w-full max-w-[220px] md:max-w-none aspect-[2/3] rounded-2xl overflow-hidden"
                                 style={{
-                                    boxShadow: `0 32px 80px rgba(${r},${g},${b},0.45), 0 8px 24px rgba(0,0,0,0.25)`,
+                                    boxShadow: `0 16px 40px rgba(${r},${g},${b},0.30), 0 4px 12px rgba(0,0,0,0.15)`,
                                 }}
                             >
                                 <Image
@@ -234,7 +234,7 @@ export default function EventDetailsPage() {
 
                     {aiSummary && (
                         <div
-                            className="pt-0 px-6 pb-20 md:px-20 md:pb-10 bg-gradient-to-b from-white/50 to-white/20 border-white/60">
+                            className="pt-0 px-6 pb-20 md:px-20 md:pb-14 bg-gradient-to-b from-white/50 to-white/20 border-white/60">
                             <div className="max-w-4xl mx-auto">
                                 <div className="relative group">
                                     <div
