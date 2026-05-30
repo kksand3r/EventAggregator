@@ -24,8 +24,14 @@ function getCategoryLabel(event: EventListItem): string {
 
 function formatDate(raw: string | undefined): string {
     if (!raw) return "Дата невідома";
+
+    // Якщо формат dd.MM.yyyy HH:mm — повертаємо як є, вже відформатовано на бекенді
+    if (/^\d{2}\.\d{2}\.\d{4}/.test(raw)) return raw;
+
+    // Інакше пробуємо парсити ISO або інші стандартні формати
     const d = new Date(raw);
     if (isNaN(d.getTime())) return raw;
+
     return d.toLocaleString("uk-UA", {
         day: "numeric",
         month: "long",
