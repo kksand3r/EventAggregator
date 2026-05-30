@@ -6,57 +6,76 @@ namespace EventAggregator.Application.Parsing;
 
 public static class DateParser
 {
-    private static readonly Dictionary<string, int> Months = new()
+    private static readonly Dictionary<string, int> Months = new(StringComparer.OrdinalIgnoreCase)
     {
         {"січ", 1}, {"лют", 2}, {"бер", 3}, {"кві", 4}, {"тра", 5}, {"чер", 6},
         {"лип", 7}, {"сер", 8}, {"вер", 9}, {"жов", 10}, {"лис", 11}, {"гру", 12}
+    };
+
+    private static readonly string[] DaysOfWeek = 
+    { 
+        "пон", "вів", "сер", "чет", "п'я", "пт", "суб", "сб", "нед", "нд" 
     };
 
     public static DateTime? ParseUkrainianDate(string? dateRaw)
     {
         if (string.IsNullOrWhiteSpace(dateRaw)) return null;
 
-        // 1. Якщо дата вже прийшла у стандартному ISO/системному форматі, парсимо її відразу
-        if (DateTimeOffset.TryParse(dateRaw, out var dto)) return dto.DateTime;
-        if (DateTime.TryParse(dateRaw, out var dt)) return dt;
+        // 1. Спроба розпарсити стандартний ISO або системний формат
+        if (DateTimeOffset.TryParse(dateRaw, out var parsedOffset)) return parsedOffset.DateTime;
+        if (DateTime.TryParse(dateRaw, out var parsedNet)) return parsedNet;
 
-        // 2. Якщо там текст ("31 травня 19:00"), працює ваша оригінальна логіка
+        // 2. Інтелектуальний розбір українського тексту
         try
         {
-            var input = dateRaw.ToLower();
-            
-            var dateMatch = Regex.Match(input, @"(\d{1,2})");
-            var timeMatch = Regex.Match(input, @"(\d{2}:\d{2})");
+            var input = dateRaw.ToLower().Trim();
 
-            if (!dateMatch.Success) return null;
+            // Очищаємо від днів тижня
+            foreach (var dOfWeek in DaysOfWeek)
+            {
+                input = Regex.Replace(input, $@"\b{dOfWeek}[а-я]*\b", "");
+            }
+            input = input.Replace(",", " ").Replace(".", " ");
+            input = Regex.Replace(input, @"\s+", " ").Trim();
+
+            // Шукаємо число місяця
+            var dayMatch = Regex.Match(input, @"\b(\d{1,2})\b");
+            if (!dayMatch.Success) return null;
         
-            int day = int.Parse(dateMatch.Groups[1].Value);
+            // Оголошуємо змінні для конструктора DateTime
+            int dayValue = int.Parse(dayMatch.Groups[1].Value); // назвав dayValue, щоб точно не було конфліктів
             int month = DateTime.Now.Month;
             int year = DateTime.Now.Year;
             
+            bool monthFound = false;
             foreach (var m in Months)
             {
                 if (input.Contains(m.Key))
                 {
                     month = m.Value;
+                    monthFound = true;
                     break;
                 }
             }
+
+            if (!monthFound) return null;
         
-            // Запобігаємо зсуву року, якщо парсимо події на кінець поточного місяця
-            if (month < DateTime.Now.Month - 1) year++;
+            if (month < DateTime.Now.Month - 1) 
+            {
+                year++;
+            }
             
             int hour = 19; 
             int minute = 0;
 
+            var timeMatch = Regex.Match(input, @"(\d{1,2})[:--](\d{2})");
             if (timeMatch.Success)
             {
-                var timeParts = timeMatch.Groups[1].Value.Split(':');
-                hour = int.Parse(timeParts[0]);
-                minute = int.Parse(timeParts[1]);
+                hour = int.Parse(timeMatch.Groups[1].Value);
+                minute = int.Parse(timeMatch.Groups[2].Value);
             }
         
-            return new DateTime(year, month, day, hour, minute, 0);
+            return new DateTime(year, month, dayValue, hour, minute, 0);
         }
         catch
         {
