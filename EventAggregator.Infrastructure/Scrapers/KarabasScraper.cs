@@ -13,7 +13,7 @@ public class KarabasScraper : IEventScraper
     public string ProviderName => "Karabas.com";
     private readonly ILogger<KarabasScraper> _logger;
 
-    private readonly string[] _citySlugs = 
+    private readonly string[] _citySlugs =
     {
         "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
@@ -52,6 +52,7 @@ public class KarabasScraper : IEventScraper
                 var parts = proxyUri.UserInfo.Split(':', 2);
                 proxy.Credentials = new NetworkCredential(parts[0], parts[1]);
             }
+
             handler.Proxy = proxy;
             handler.UseProxy = true;
             handler.PreAuthenticate = true;
@@ -59,7 +60,8 @@ public class KarabasScraper : IEventScraper
 
         using (var httpClient = new HttpClient(handler))
         {
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            httpClient.DefaultRequestHeaders.Add("User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
             httpClient.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
             httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/javascript, */*; q=0.01");
             long timeStamp = new DateTimeOffset(DateTime.UtcNow.Date).ToUnixTimeSeconds();
@@ -70,7 +72,7 @@ public class KarabasScraper : IEventScraper
             {
                 string cityLower = city.ToLowerInvariant();
                 _logger.LogInformation("🏙️ {Provider}: Сканування міста {City}...", ProviderName, cityLower.ToUpper());
-                
+
                 int eventsBeforeCity = allEvents.Count;
 
                 foreach (var category in _categories)
@@ -82,7 +84,8 @@ public class KarabasScraper : IEventScraper
                     {
                         if (browser.IsClosed) return allEvents;
 
-                        string targetUrl = $"https://{cityLower}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
+                        string targetUrl =
+                            $"https://{cityLower}.karabas.com/uk/{category}/?time={timeStamp}&page={page}&per-page=20";
                         try
                         {
                             var response = await httpClient.GetAsync(targetUrl);
@@ -99,7 +102,10 @@ public class KarabasScraper : IEventScraper
                             if (root.TryGetProperty("content", out var contentEl))
                             {
                                 string htmlContent = contentEl.GetString() ?? "";
-                                var jsonLdRegex = new Regex(@"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>", RegexOptions.IgnoreCase);
+                                var jsonLdRegex =
+                                    new Regex(
+                                        @"<script[^>]*type\s*=\s*""application/ld\+json""[^>]*>([\s\S]*?)</script>",
+                                        RegexOptions.IgnoreCase);
                                 var matches = jsonLdRegex.Matches(htmlContent);
 
                                 int parsedOnPageCount = 0;
@@ -117,20 +123,30 @@ public class KarabasScraper : IEventScraper
                                             string type = typeEl.GetString() ?? "";
                                             if (type.Contains("Event") || type == "Festival")
                                             {
-                                                string url = ldRoot.TryGetProperty("url", out var urlEl) ? urlEl.GetString() ?? "" : "";
-                                                string title = ldRoot.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
-                                                string description = ldRoot.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? "" : "";
-                                                
+                                                string url = ldRoot.TryGetProperty("url", out var urlEl)
+                                                    ? urlEl.GetString() ?? ""
+                                                    : "";
+                                                string title = ldRoot.TryGetProperty("name", out var nameEl)
+                                                    ? nameEl.GetString() ?? ""
+                                                    : "";
+                                                string description =
+                                                    ldRoot.TryGetProperty("description", out var descEl)
+                                                        ? descEl.GetString() ?? ""
+                                                        : "";
+
                                                 string imageUrl = "";
                                                 if (ldRoot.TryGetProperty("image", out var imgEl))
                                                 {
-                                                    if (imgEl.ValueKind == JsonValueKind.Object && imgEl.TryGetProperty("url", out var imgUrlEl))
+                                                    if (imgEl.ValueKind == JsonValueKind.Object &&
+                                                        imgEl.TryGetProperty("url", out var imgUrlEl))
                                                         imageUrl = imgUrlEl.GetString() ?? "";
                                                     else if (imgEl.ValueKind == JsonValueKind.String)
                                                         imageUrl = imgEl.GetString() ?? "";
                                                 }
 
-                                                string startDateStr = ldRoot.TryGetProperty("startDate", out var dateEl) ? dateEl.GetString() ?? "" : "";
+                                                string startDateStr = ldRoot.TryGetProperty("startDate", out var dateEl)
+                                                    ? dateEl.GetString() ?? ""
+                                                    : "";
 
                                                 if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(title)) continue;
                                                 if (url.StartsWith("/")) url = "https://karabas.com" + url;
@@ -144,7 +160,7 @@ public class KarabasScraper : IEventScraper
                                                     description = Regex.Replace(description, @"\s+", " ").Trim();
                                                 }
 
-                                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(2); 
+                                                DateTime finalParsedDate = DateTime.UtcNow.AddDays(2);
                                                 string displayDate = startDateStr;
 
                                                 if (DateTimeOffset.TryParse(startDateStr, out var parsedOffset))
@@ -168,10 +184,11 @@ public class KarabasScraper : IEventScraper
                                                             Url = url.Trim(),
                                                             Source = ProviderName,
                                                             Description = description,
-                                                            Date = displayDate, 
+                                                            Date = displayDate,
                                                             ParsedDate = finalParsedDate,
-                                                            City = cityLower, 
-                                                            CityUk = CityTranslations.GetValueOrDefault(cityLower, cityLower),
+                                                            City = cityLower,
+                                                            CityUk = CityTranslations.GetValueOrDefault(cityLower,
+                                                                cityLower),
                                                             Category = category,
                                                             ImageUrl = imageUrl.Trim()
                                                         };
@@ -186,13 +203,15 @@ public class KarabasScraper : IEventScraper
                                     }
                                     catch (Exception)
                                     {
-                                        // Ігноруємо CollectionPage / BreadcrumbList
+
                                     }
                                 }
 
                                 if (parsedOnPageCount > 0)
                                 {
-                                    _logger.LogInformation("📦 {Provider}: Знайдено {Count} подій на сторінці {Page} ({Category})", ProviderName, parsedOnPageCount, page, category.ToUpper());
+                                    _logger.LogInformation(
+                                        "📦 {Provider}: Знайдено {Count} подій на сторінці {Page} ({Category})",
+                                        ProviderName, parsedOnPageCount, page, category.ToUpper());
                                 }
                             }
 
@@ -214,14 +233,17 @@ public class KarabasScraper : IEventScraper
                             hasMorePages = false;
                         }
                     }
+
                     await Task.Delay(Random.Shared.Next(800, 1500));
                 }
 
                 int eventsAddedForCity = allEvents.Count - eventsBeforeCity;
                 if (eventsAddedForCity > 0)
-                    _logger.LogInformation("✅ {Provider}: Отримано {Count} подій для міста {City}", ProviderName, eventsAddedForCity, cityLower.ToUpper());
+                    _logger.LogInformation("✅ {Provider}: Отримано {Count} подій для міста {City}", ProviderName,
+                        eventsAddedForCity, cityLower.ToUpper());
                 else
-                    _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName, cityLower.ToUpper());
+                    _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName,
+                        cityLower.ToUpper());
             }
         }
 
@@ -241,7 +263,8 @@ public class KarabasScraper : IEventScraper
             _logger.LogInformation("   🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
 
         _logger.LogInformation("=================================================");
-        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName, allEvents.Count);
+        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName,
+            allEvents.Count);
 
         return allEvents;
     }

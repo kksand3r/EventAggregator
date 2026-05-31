@@ -1,4 +1,5 @@
-﻿import { Music, Theater, Mic2, Sparkles, Disc3, Flag, MoreHorizontal } from "lucide-react";
+﻿import {Music, Theater, Mic2, Sparkles, Disc3, Flag, MoreHorizontal} from "lucide-react";
+
 export const CATEGORY_MAP: Record<string, string> = {
     'concerts': 'Concerts',
     'theatres': 'Theatre',
@@ -21,9 +22,11 @@ export const CATEGORY_API_MAP: Record<string, string> = {
 export function formatCategory(apiCategory: string): string {
     return CATEGORY_MAP[apiCategory.toLowerCase()] || apiCategory;
 }
+
 export function getApiCategory(displayCategory: string): string {
     return CATEGORY_API_MAP[displayCategory] || displayCategory.toLowerCase();
 }
+
 export function getCategoryIcon(category: string) {
     const normalized = category.toLowerCase();
     switch (normalized) {
@@ -49,6 +52,7 @@ export function getCategoryIcon(category: string) {
             return MoreHorizontal;
     }
 }
+
 export function getCategoryColor(category: string): string {
     const normalized = category.toLowerCase();
     switch (normalized) {

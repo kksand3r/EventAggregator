@@ -38,24 +38,25 @@ namespace EventAggregator.Application.Services
                 try
                 {
                     _logger.LogInformation("⏳ Запуск скрапінгу для провайдера: {Provider}", scraper.ProviderName);
-                    
+
                     var results = await scraper.ScrapeAsync(browser);
                     allEvents.AddRange(results);
-                    
-                    _logger.LogInformation("✨ Провайдер {Provider} успішно зібрав {Count} подій.", scraper.ProviderName, results.Count);
+
+                    _logger.LogInformation("✨ Провайдер {Provider} успішно зібрав {Count} подій.", scraper.ProviderName,
+                        results.Count);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Помилка скрапера {Provider}", scraper.ProviderName);
                 }
 
-                // Додаємо випадкову затримку між різними сайтами (крім останнього у списку)
                 if (i < scrapersList.Count - 1 && !ct.IsCancellationRequested)
                 {
-                    // Рандомний інтервал від 5000 мс (5 сек) до 12000 мс (12 сек)
                     int delay = random.Next(5000, 12000);
-                    _logger.LogInformation("😴 Очікування {Delay} мс перед переходом до наступного сайту, щоб уникнути блокування по IP...", delay);
-                    
+                    _logger.LogInformation(
+                        "😴 Очікування {Delay} мс перед переходом до наступного сайту, щоб уникнути блокування по IP...",
+                        delay);
+
                     try
                     {
                         await Task.Delay(delay, ct);
@@ -70,7 +71,8 @@ namespace EventAggregator.Application.Services
 
             var uniqueEvents = allEvents.Distinct(EventEqualityComparer.Instance).ToList();
 
-            _logger.LogInformation("📊 Підсумок сесії — Зібрано всього: {Total}. Унікальних після очистки: {Unique}", allEvents.Count, uniqueEvents.Count);
+            _logger.LogInformation("📊 Підсумок сесії — Зібрано всього: {Total}. Унікальних після очистки: {Unique}",
+                allEvents.Count, uniqueEvents.Count);
 
             await _repository.SaveEventsAsync(uniqueEvents, ct);
         }

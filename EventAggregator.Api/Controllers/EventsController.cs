@@ -52,12 +52,13 @@ namespace EventAggregator.Api.Controllers
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
 
-                var agentMessage = doc.RootElement.TryGetProperty("agentMessage", out var msgProp) 
-                    ? msgProp.GetString() ?? "Не вдалося отримати відповідь від асистента." 
+                var agentMessage = doc.RootElement.TryGetProperty("agentMessage", out var msgProp)
+                    ? msgProp.GetString() ?? "Не вдалося отримати відповідь від асистента."
                     : "Не вдалося отримати відповідь від асистента.";
 
-                var rawMcpData = doc.RootElement.TryGetProperty("rawMcpData", out var rawProp) 
-                    ? rawProp : default;
+                var rawMcpData = doc.RootElement.TryGetProperty("rawMcpData", out var rawProp)
+                    ? rawProp
+                    : default;
 
                 var eventsList = new List<EventDto>();
 
@@ -142,8 +143,8 @@ namespace EventAggregator.Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new 
-                { 
+                return StatusCode(500, new
+                {
                     agentMessage = $"Помилка інтеграції MCP агента: {ex.Message}",
                     events = Enumerable.Empty<EventDto>()
                 });
@@ -181,7 +182,7 @@ namespace EventAggregator.Api.Controllers
             var summary = await gemini.SummarizeEventAsync(response.Source.Title, response.Source.Description);
             return Ok(new { Summary = summary });
         }
-        
+
         [HttpGet]
         public async Task<IActionResult> GetAll(
             [FromQuery] string? city,
@@ -197,7 +198,6 @@ namespace EventAggregator.Api.Controllers
                 f => f.Range(r => r.DateRange(dr => dr.Field(ev => ev.ParsedDate).Gte(now)))
             };
 
-            // ОНОВЛЕНО: Додано ToLowerInvariant() для точного збігу з keyword-полем в Elasticsearch
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
                 filters.Add(f => f.Term(t => t.Field("city").Value(city.ToLowerInvariant())));
 
@@ -212,7 +212,11 @@ namespace EventAggregator.Api.Controllers
             );
 
             return response.IsValidResponse
-                ? Ok(new { Total = response.Total, Page = page, PageSize = pageSize, Data = response.Documents.Select(d => d.ToDto()) })
+                ? Ok(new
+                {
+                    Total = response.Total, Page = page, PageSize = pageSize,
+                    Data = response.Documents.Select(d => d.ToDto())
+                })
                 : StatusCode(500, response.DebugInformation);
         }
 

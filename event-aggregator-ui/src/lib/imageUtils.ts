@@ -1,4 +1,4 @@
-﻿import { formatCategory } from "./categoryMapping";
+﻿import {formatCategory} from "./categoryMapping";
 
 function utf8ToBase64(str: string): string {
     return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => {

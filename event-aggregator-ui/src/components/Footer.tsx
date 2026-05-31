@@ -6,7 +6,7 @@ interface FooterProps {
     totalCategories: number;
 }
 
-export default function Footer({ totalEvents, totalCities, totalCategories }: FooterProps) {
+export default function Footer({totalEvents, totalCities, totalCategories}: FooterProps) {
     const STATS = [
         {
             value: totalEvents > 999
@@ -14,8 +14,8 @@ export default function Footer({ totalEvents, totalCities, totalCategories }: Fo
                 : totalEvents.toString(),
             label: "Events"
         },
-        { value: totalCities.toString(), label: "Cities" },
-        { value: totalCategories.toString(), label: "Categories" },
+        {value: totalCities.toString(), label: "Cities"},
+        {value: totalCategories.toString(), label: "Categories"},
     ];
 
     return (
@@ -27,9 +27,11 @@ export default function Footer({ totalEvents, totalCities, totalCategories }: Fo
                     </span>
                     <div className="flex flex-wrap gap-3 justify-center">
                         {STATS.map(s => (
-                            <div key={s.label} className="flex items-baseline gap-2 px-4 py-2 rounded-xl bg-white/45 border border-white/80">
+                            <div key={s.label}
+                                 className="flex items-baseline gap-2 px-4 py-2 rounded-xl bg-white/45 border border-white/80">
                                 <span className="text-xl font-extrabold tabular-nums text-[#7c4dff]">{s.value}</span>
-                                <span className="text-xs font-semibold uppercase tracking-wider text-[#7c4dff]/65">{s.label}</span>
+                                <span
+                                    className="text-xs font-semibold uppercase tracking-wider text-[#7c4dff]/65">{s.label}</span>
                             </div>
                         ))}
                     </div>

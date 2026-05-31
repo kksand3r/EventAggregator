@@ -1,11 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 using EventAggregator.Application.Interfaces;
 using EventAggregator.Domain.Models;
 using Microsoft.Extensions.Logging;
@@ -19,7 +13,7 @@ public class ConcertUaScraper : IEventScraper
     private readonly ILogger<ConcertUaScraper> _logger;
     private readonly SemaphoreSlim _semaphore = new(5);
 
-    private readonly string[] _citySlugs = 
+    private readonly string[] _citySlugs =
     {
         "kyiv", "odesa", "dnipro", "lviv", "kharkiv", "ivano-frankivsk",
         "vinnytsia", "poltava", "zhytomyr", "zaporizhzhia", "ternopil",
@@ -27,19 +21,17 @@ public class ConcertUaScraper : IEventScraper
         "lutsk", "mykolaiv", "uzhhorod", "kropyvnytskyi"
     };
 
-    // Залишено тільки ваші 7 оригінальних категорій
     private static readonly Dictionary<string, string> CategoryPaths = new()
     {
-        { "concerts",  "concerts"  },
-        { "theatres",  "theater"   },
-        { "stand-up",  "humor"     },
-        { "child",     "kids"      },
-        { "clubs",     "electronic"},
-        { "inshe",     "other"     },
+        { "concerts", "concerts" },
+        { "theatres", "theater" },
+        { "stand-up", "humor" },
+        { "child", "kids" },
+        { "clubs", "electronic" },
+        { "inshe", "other" },
         { "festivals", "festivals" }
     };
 
-    // Ключі словника тепер стовідсотково відповідають системним слагам міст у нижньому регістрі
     private static readonly Dictionary<string, string> CityTranslations = new(StringComparer.OrdinalIgnoreCase)
     {
         { "kyiv", "Київ" }, { "odesa", "Одеса" }, { "dnipro", "Дніпро" }, { "lviv", "Львів" },
@@ -61,7 +53,8 @@ public class ConcertUaScraper : IEventScraper
         var allCollectedEvents = new List<ScrapedEvent>();
 
         using var httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
-        httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        httpClient.DefaultRequestHeaders.Add("User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
         _logger.LogInformation("🚀 Початок скрапінгу {Provider} по категоріях...", ProviderName);
 
@@ -91,12 +84,14 @@ public class ConcertUaScraper : IEventScraper
 
                     if (!response.IsSuccessStatusCode)
                     {
-                        _logger.LogDebug("⚠️ {City}/{Category}: {Code} — пропускаємо", citySlug, categoryPath, (int)response.StatusCode);
+                        _logger.LogDebug("⚠️ {City}/{Category}: {Code} — пропускаємо", citySlug, categoryPath,
+                            (int)response.StatusCode);
                         return localEvents;
                     }
 
                     string htmlContent = await response.Content.ReadAsStringAsync();
-                    var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>", RegexOptions.IgnoreCase);
+                    var jsonLdRegex = new Regex(@"<script\s+type=""application/ld\+json"">([\s\S]*?)</script>",
+                        RegexOptions.IgnoreCase);
 
                     foreach (Match match in jsonLdRegex.Matches(htmlContent))
                     {
@@ -118,15 +113,24 @@ public class ConcertUaScraper : IEventScraper
                                     !(typeProp.GetString()?.Contains("Event") ?? false))
                                     continue;
 
-                                string title = node.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "Без назви" : "Без назви";
-                                string url = node.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
-                                string startDateRaw = node.TryGetProperty("startDate", out var startProp) ? startProp.GetString() ?? "" : "";
-                                string description = node.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "";
-                                if (string.IsNullOrWhiteSpace(description)) description = "Опис доступний на сайті за посиланням.";
+                                string title = node.TryGetProperty("name", out var nameProp)
+                                    ? nameProp.GetString() ?? "Без назви"
+                                    : "Без назви";
+                                string url = node.TryGetProperty("url", out var urlProp)
+                                    ? urlProp.GetString() ?? ""
+                                    : "";
+                                string startDateRaw = node.TryGetProperty("startDate", out var startProp)
+                                    ? startProp.GetString() ?? ""
+                                    : "";
+                                string description = node.TryGetProperty("description", out var descProp)
+                                    ? descProp.GetString() ?? ""
+                                    : "";
+                                if (string.IsNullOrWhiteSpace(description))
+                                    description = "Опис доступний на сайті за посиланням.";
 
                                 if (string.IsNullOrEmpty(url)) continue;
                                 if (url.StartsWith("/")) url = "https://concert.ua" + url;
-                                
+
                                 string imageUrl = "";
                                 if (node.TryGetProperty("image", out var imgProp))
                                 {
@@ -137,9 +141,11 @@ public class ConcertUaScraper : IEventScraper
                                 }
 
                                 DateTime? parsedDate = null;
-                                if (!string.IsNullOrEmpty(startDateRaw) && DateTimeOffset.TryParse(startDateRaw, out var dto))
+                                if (!string.IsNullOrEmpty(startDateRaw) &&
+                                    DateTimeOffset.TryParse(startDateRaw, out var dto))
                                     parsedDate = dto.UtcDateTime;
-                                else if (!string.IsNullOrEmpty(startDateRaw) && DateTime.TryParse(startDateRaw, out var dt))
+                                else if (!string.IsNullOrEmpty(startDateRaw) &&
+                                         DateTime.TryParse(startDateRaw, out var dt))
                                     parsedDate = dt;
 
                                 var newEvent = new ScrapedEvent
@@ -148,7 +154,9 @@ public class ConcertUaScraper : IEventScraper
                                     Url = url,
                                     Source = ProviderName,
                                     Description = description,
-                                    Date = parsedDate.HasValue ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm") : startDateRaw,
+                                    Date = parsedDate.HasValue
+                                        ? parsedDate.Value.ToString("dd.MM.yyyy HH:mm")
+                                        : startDateRaw,
                                     ParsedDate = parsedDate,
                                     City = citySlug.ToLowerInvariant(),
                                     CityUk = CityTranslations.GetValueOrDefault(citySlug.ToLowerInvariant(), citySlug),
@@ -185,9 +193,11 @@ public class ConcertUaScraper : IEventScraper
                 }
 
                 if (cityEventsCount > 0)
-                    _logger.LogInformation("✅ {Provider}: Отримано {Count} подій для міста {City}", ProviderName, cityEventsCount, citySlug.ToUpper());
+                    _logger.LogInformation("✅ {Provider}: Отримано {Count} подій для міста {City}", ProviderName,
+                        cityEventsCount, citySlug.ToUpper());
                 else
-                    _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName, citySlug.ToUpper());
+                    _logger.LogWarning("⚠️ {Provider}: Подій не знайдено для міста {City}", ProviderName,
+                        citySlug.ToUpper());
             }
             catch (Exception ex)
             {
@@ -217,7 +227,8 @@ public class ConcertUaScraper : IEventScraper
             _logger.LogInformation("   🏷️ {Category}: {Count} подій", group.Key.ToUpper(), group.Count());
 
         _logger.LogInformation("=================================================");
-        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName, allCollectedEvents.Count);
+        _logger.LogInformation("🏁 {Provider}: Всього знайдено унікальних подій: {Count}", ProviderName,
+            allCollectedEvents.Count);
 
         return allCollectedEvents;
     }

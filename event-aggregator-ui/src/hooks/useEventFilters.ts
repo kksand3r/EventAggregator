@@ -1,9 +1,8 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import {useState, useEffect, useCallback} from "react";
+import {useSearchParams, useRouter} from "next/navigation";
 
-// ПОВЕРНЕНО: "archive" знову на місці
 export type Tab = "featured" | "catalog" | "timeline" | "stats" | "archive";
 export type SearchMode = 'ai' | 'classic';
 
@@ -16,10 +15,10 @@ export function useEventFilters() {
     const tabParam = searchParams.get("tab") as Tab | null;
     const catParam = searchParams.get("category") || "All";
     const cityParam = searchParams.get("city") || "All";
-    
+
     const rawPage = parseInt(searchParams.get("page") || "1");
     const pageParam = Number.isNaN(rawPage) ? 1 : Math.max(1, rawPage);
-    
+
     const [activeTab, setActiveTab] = useState<Tab>(() => {
         if (tabParam && VALID_TABS.includes(tabParam)) return tabParam;
         return "featured";
@@ -41,7 +40,7 @@ export function useEventFilters() {
             }
         });
         const query = params.toString();
-        router.push(query ? `/?${query}` : "/", { scroll: false });
+        router.push(query ? `/?${query}` : "/", {scroll: false});
     }, [searchParams, router]);
 
     useEffect(() => {
@@ -57,27 +56,27 @@ export function useEventFilters() {
         setSearchMode("ai");
 
         if (tabId === "featured") {
-            updateQueryParams({ tab: null });
+            updateQueryParams({tab: null});
         } else {
-            updateQueryParams({ tab: tabId });
+            updateQueryParams({tab: tabId});
         }
     }, [updateQueryParams]);
 
     const handleCategoryChange = useCallback((cat: string) => {
         setSelectedCategory(cat);
         setCurrentPage(1);
-        updateQueryParams({ category: cat, page: 1 });
+        updateQueryParams({category: cat, page: 1});
     }, [updateQueryParams]);
 
     const handleCityChange = useCallback((city: string) => {
         setSelectedCity(city);
         setCurrentPage(1);
-        updateQueryParams({ city: city, page: 1 });
+        updateQueryParams({city: city, page: 1});
     }, [updateQueryParams]);
 
     const handlePageChange = useCallback((page: number) => {
         setCurrentPage(page);
-        updateQueryParams({ page });
+        updateQueryParams({page});
     }, [updateQueryParams]);
 
     const resetToHome = useCallback(() => handleTabChange("featured"), [handleTabChange]);
@@ -86,7 +85,7 @@ export function useEventFilters() {
         setSelectedCategory("All");
         setSelectedCity("All");
         setCurrentPage(1);
-        updateQueryParams({ category: null, city: null, page: 1 });
+        updateQueryParams({category: null, city: null, page: 1});
     }, [updateQueryParams]);
 
     return {

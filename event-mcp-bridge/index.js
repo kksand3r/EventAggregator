@@ -1,6 +1,6 @@
 ﻿import express from 'express';
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {Client} from "@modelcontextprotocol/sdk/client/index.js";
+import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import http from 'http';
 
 const app = express();
@@ -10,13 +10,10 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const ELASTIC_URL = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 
-// =====================================================================
-// 🛡️ ВНУТРІШНІЙ HTTP-ПРОКСІ ДЛЯ КОРЕКЦІЇ ЗАГОЛОВКІВ
-// =====================================================================
 const PROXY_PORT = 9292;
 const proxy = http.createServer((req, res) => {
     const targetUrl = new URL(ELASTIC_URL);
-    const proxyHeaders = { ...req.headers };
+    const proxyHeaders = {...req.headers};
     proxyHeaders.host = targetUrl.host;
 
     ['accept', 'content-type'].forEach(header => {
@@ -40,7 +37,10 @@ const proxy = http.createServer((req, res) => {
 
     proxyReq.on('error', (err) => {
         console.error('❌ [Proxy Error]:', err.message);
-        if (!res.headersSent) { res.writeHead(502); res.end('Bad Gateway'); }
+        if (!res.headersSent) {
+            res.writeHead(502);
+            res.end('Bad Gateway');
+        }
     });
 
     req.pipe(proxyReq);
@@ -50,14 +50,6 @@ proxy.listen(PROXY_PORT, '127.0.0.1', () => {
     console.log(`🛡️  Internal Elastic Proxy running on 127.0.0.1:${PROXY_PORT}`);
 });
 
-
-// =====================================================================
-// 🔎 ПРЯМИЙ ЗАПИТ ДО ELASTICSEARCH (без Gemini)
-// Gemini 1.5 Flash впертий — завжди хоче зробити порожній search спочатку.
-// Нова стратегія: будуємо ES-запит самостійно з тексту користувача,
-// викликаємо Elastic напряму, а Gemini використовуємо тільки для
-// формування красивої текстової відповіді на основі готових результатів.
-// =====================================================================
 async function searchElastic(queryBody) {
     return new Promise((resolve, reject) => {
         const body = JSON.stringify(queryBody);
@@ -77,8 +69,11 @@ async function searchElastic(queryBody) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                try { resolve(JSON.parse(data)); }
-                catch (e) { reject(new Error(`Failed to parse ES response: ${e.message}`)); }
+                try {
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    reject(new Error(`Failed to parse ES response: ${e.message}`));
+                }
             });
         });
 
@@ -88,12 +83,10 @@ async function searchElastic(queryBody) {
     });
 }
 
-// Будуємо ES-запит з тексту користувача
 function buildElasticQuery(query) {
     const mustClauses = [];
     const filterClauses = [];
 
-    // Місяці українською -> номер місяця
     const monthMap = {
         'січень': 1, 'січня': 1,
         'лютий': 2, 'лютого': 2,
@@ -109,7 +102,6 @@ function buildElasticQuery(query) {
         'грудень': 12, 'грудня': 12
     };
 
-    // Міста українською -> назва поля cityUk
     const cityMap = {
         'київ': 'Київ', 'києві': 'Київ', 'києва': 'Київ',
         'львів': 'Львів', 'львові': 'Львів', 'львова': 'Львів',
@@ -137,7 +129,6 @@ function buildElasticQuery(query) {
     const lowerQuery = query.toLowerCase();
     const words = lowerQuery.split(/\s+/);
 
-    // Шукаємо місто
     let detectedCity = null;
     for (const word of words) {
         const clean = word.replace(/[?!.,:"']+$/, '');
@@ -147,7 +138,6 @@ function buildElasticQuery(query) {
         }
     }
 
-    // Шукаємо місяць
     let detectedMonth = null;
     for (const word of words) {
         const clean = word.replace(/[?!.,:"']+$/, '');
@@ -157,7 +147,6 @@ function buildElasticQuery(query) {
         }
     }
 
-    // Додаємо multi_match для пошуку теми
     mustClauses.push({
         multi_match: {
             query: query,
@@ -167,19 +156,17 @@ function buildElasticQuery(query) {
         }
     });
 
-    // Додаємо фільтр по місту
     if (detectedCity) {
-        filterClauses.push({ match: { cityUk: detectedCity } });
+        filterClauses.push({match: {cityUk: detectedCity}});
         console.log(`  ↳ 🏙️  Detected city: ${detectedCity}`);
     }
 
-    // Додаємо фільтр по місяцю
     if (detectedMonth) {
         const year = new Date().getFullYear();
         const from = `${year}-${String(detectedMonth).padStart(2, '0')}-01T00:00:00`;
         const lastDay = new Date(year, detectedMonth, 0).getDate();
         const to = `${year}-${String(detectedMonth).padStart(2, '0')}-${lastDay}T23:59:59`;
-        filterClauses.push({ range: { parsedDate: { gte: from, lte: to } } });
+        filterClauses.push({range: {parsedDate: {gte: from, lte: to}}});
         console.log(`  ↳ 📅 Detected month: ${detectedMonth} → ${from} — ${to}`);
     }
 
@@ -190,22 +177,18 @@ function buildElasticQuery(query) {
                 filter: filterClauses
             }
         },
-        sort: [{ parsedDate: { order: "asc" } }],
+        sort: [{parsedDate: {order: "asc"}}],
         size: 20
     };
 }
 
-
-// =====================================================================
-// 🚀 ІНІЦІАЛІЗАЦІЯ MCP КЛІЄНТА
-// =====================================================================
 const transport = new StdioClientTransport({
     command: "node",
     args: ["./node_modules/@elastic/mcp-server-elasticsearch/dist/index.js"],
-    env: { ...process.env, ES_URL: `http://127.0.0.1:${PROXY_PORT}` }
+    env: {...process.env, ES_URL: `http://127.0.0.1:${PROXY_PORT}`}
 });
 
-const mcpClient = new Client({ name: "eventspace-mcp-bridge", version: "1.0.0" }, { capabilities: {} });
+const mcpClient = new Client({name: "eventspace-mcp-bridge", version: "1.0.0"}, {capabilities: {}});
 let isConnected = false;
 
 try {
@@ -229,21 +212,14 @@ function cleanSchema(schema) {
     return cleaned;
 }
 
-
-// =====================================================================
-// 🧠 AI SEARCH
-// =====================================================================
 app.post('/api/mcp-search', async (req, res) => {
     try {
-        const { query } = req.body;
+        const {query} = req.body;
         console.log(`\n🔍 [${new Date().toISOString()}] Query received: "${query}"`);
 
-        if (!query) return res.status(400).json({ error: "Query is required" });
-        if (!isConnected) return res.status(503).json({ error: "MCP server unavailable" });
+        if (!query) return res.status(400).json({error: "Query is required"});
+        if (!isConnected) return res.status(503).json({error: "MCP server unavailable"});
 
-        // =====================================================================
-        // КРОК 1: Шукаємо в Elasticsearch напряму — без Gemini
-        // =====================================================================
         const esQuery = buildElasticQuery(query);
         console.log(`  ↳ ES query:`, JSON.stringify(esQuery.query));
 
@@ -252,17 +228,14 @@ app.post('/api/mcp-search', async (req, res) => {
             esResults = await searchElastic(esQuery);
         } catch (esError) {
             console.error(`  ↳ ❌ Elasticsearch error:`, esError.message);
-            return res.status(500).json({ error: `Elasticsearch error: ${esError.message}` });
+            return res.status(500).json({error: `Elasticsearch error: ${esError.message}`});
         }
 
         const hits = esResults?.hits?.hits ?? [];
         console.log(`  ↳ Elasticsearch returned ${hits.length} hits (total: ${esResults?.hits?.total?.value ?? '?'})`);
 
-        const rawMcpData = [{ text: JSON.stringify(esResults) }];
+        const rawMcpData = [{text: JSON.stringify(esResults)}];
 
-        // =====================================================================
-        // КРОК 2: Передаємо результати Gemini тільки для формування відповіді
-        // =====================================================================
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
         const hitsForGemini = hits.map(h => ({
@@ -275,7 +248,7 @@ app.post('/api/mcp-search', async (req, res) => {
 
         const geminiPrompt = `
 Ти — ШІ-асистент платформи EventSpace. Користувач шукав: "${query}".
-Сьогоднішня дата: ${new Date().toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })}.
+Сьогоднішня дата: ${new Date().toLocaleDateString('uk-UA', {day: 'numeric', month: 'long', year: 'numeric'})}.
 
 Ось результати пошуку з бази даних (${hits.length} подій):
 ${JSON.stringify(hitsForGemini, null, 2)}
@@ -290,9 +263,9 @@ ${JSON.stringify(hitsForGemini, null, 2)}
 
         const geminiResponse = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: geminiPrompt }] }]
+                contents: [{role: "user", parts: [{text: geminiPrompt}]}]
             })
         });
 
@@ -300,7 +273,7 @@ ${JSON.stringify(hitsForGemini, null, 2)}
 
         if (geminiJson.error) {
             console.error("❌ Gemini error:", geminiJson.error);
-            return res.json({ agentMessage: `Помилка ШІ: ${geminiJson.error.message}`, rawMcpData });
+            return res.json({agentMessage: `Помилка ШІ: ${geminiJson.error.message}`, rawMcpData});
         }
 
         const agentMessage = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text
@@ -308,11 +281,11 @@ ${JSON.stringify(hitsForGemini, null, 2)}
 
         console.log(`  ↳ ✅ Gemini response ready`);
 
-        return res.json({ agentMessage, rawMcpData });
+        return res.json({agentMessage, rawMcpData});
 
     } catch (error) {
         console.error("❌ Unhandled error:", error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({error: error.message});
     }
 });
 

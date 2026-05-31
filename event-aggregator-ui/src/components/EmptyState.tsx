@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { JSX } from "react";
+import {JSX} from "react";
 
 type EmptyType = "search" | "filter" | "generic";
 

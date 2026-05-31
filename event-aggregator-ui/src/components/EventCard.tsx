@@ -11,7 +11,7 @@ interface EventCardProps {
 }
 
 function formatViewCount(count: number): string {
-    if (!count) return "0"; // Захист від undefined
+    if (!count) return "0";
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
     if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
     return count.toString();
@@ -25,10 +25,8 @@ function getCategoryLabel(event: EventListItem): string {
 function formatDate(raw: string | undefined): string {
     if (!raw) return "Дата невідома";
 
-    // Якщо формат dd.MM.yyyy HH:mm — повертаємо як є, вже відформатовано на бекенді
     if (/^\d{2}\.\d{2}\.\d{4}/.test(raw)) return raw;
 
-    // Інакше пробуємо парсити ISO або інші стандартні формати
     const d = new Date(raw);
     if (isNaN(d.getTime())) return raw;
 
@@ -47,7 +45,6 @@ export default function EventCard({event, index = 0}: EventCardProps) {
     const delay = Math.min(index * 60, 600);
     const category = getCategoryLabel(event);
 
-    // 🌟 МАГІЯ СУМІСНОСТІ: Витягуємо дані незалежно від того, яка назва поля прийшла в JSON
     const displayImage = event.image || (event as any).imageUrl || "/placeholder-event.jpg";
     const displayViews = event.viewCount !== undefined ? event.viewCount : ((event as any).viewsCount ?? 0);
     const eventId = event.id || (event as any)._id || "";
@@ -66,25 +63,23 @@ export default function EventCard({event, index = 0}: EventCardProps) {
                     animationDelay: `${delay}ms`,
                 }}
             >
-                {/* 🔒 Твоя оригінальна верстка фону — замінено тільки src на сумісний displayImage */}
                 <div className="absolute inset-0 z-0">
                     <Image
                         src={displayImage}
                         alt=""
                         fill
-                        unoptimized // 🌟 Захист від блокування домену images.karabas.com
+                        unoptimized
                         priority={index < 4}
                         className="object-cover blur-[20px] brightness-60 scale-110"
                     />
                 </div>
 
-                {/* 🔒 Твоя оригінальна верстка обкладинки — замінено тільки src на сумісний displayImage */}
                 <div className="absolute inset-0 z-10 p-2.5">
                     <Image
                         src={displayImage}
                         alt={event.title}
                         fill
-                        unoptimized // 🌟 Захист від блокування домену images.karabas.com
+                        unoptimized
                         className="object-contain z-10 transition-transform duration-500 ease-out group-hover:scale-105"
                         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
                     />

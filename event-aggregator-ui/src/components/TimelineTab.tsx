@@ -415,7 +415,6 @@ export default function TimelineTab() {
                         </select>
                     </div>
 
-                    {/* Локальна кнопка скидання фільтрів */}
                     {(selectedCity !== "All" || selectedCategory !== "All") && (
                         <button
                             onClick={clearFilters}

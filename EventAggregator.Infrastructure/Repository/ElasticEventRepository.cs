@@ -22,13 +22,14 @@ public class ElasticEventRepository : IEventRepository
         var exists = await _client.Indices.ExistsAsync(IndexName, ct);
         if (exists.Exists) return;
 
-        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch з українською морфологією...", IndexName);
+        _logger.LogInformation("🛠️ Створення індексу '{Index}' в Elasticsearch з українською морфологією...",
+            IndexName);
 
         var response = await _client.Indices.CreateAsync(IndexName, c => c
             .Mappings(m => m
                 .Properties<ScrapedEvent>(p => p
-                    .Text(t => t.Title, g => g.Analyzer("ukrainian")) 
-                    .Text(t => t.Description, g => g.Analyzer("ukrainian")) 
+                    .Text(t => t.Title, g => g.Analyzer("ukrainian"))
+                    .Text(t => t.Description, g => g.Analyzer("ukrainian"))
                     .Text(t => t.Category, g => g
                         .Analyzer("ukrainian")
                         .Fields(f => f
@@ -63,6 +64,7 @@ public class ElasticEventRepository : IEventRepository
         if (response.IsValidResponse)
             _logger.LogInformation("✅ Успішно збережено {Count} подій.", eventsList.Count);
         else
-            _logger.LogError("❌ Помилка Elasticsearch під час виконання Bulk-запиту: {Error}", response.DebugInformation);
+            _logger.LogError("❌ Помилка Elasticsearch під час виконання Bulk-запиту: {Error}",
+                response.DebugInformation);
     }
 }

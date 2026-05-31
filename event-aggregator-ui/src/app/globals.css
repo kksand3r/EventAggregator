@@ -5,25 +5,25 @@
         --background: #f4f1ff;
         --foreground: #1a1535;
 
-        --card-bg:     rgba(255, 255, 255, 0.58);
+        --card-bg: rgba(255, 255, 255, 0.58);
         --card-border: rgba(255, 255, 255, 0.82);
-        --blur:        20px;
+        --blur: 20px;
 
-        --violet:      #7c4dff;
-        --violet-mid:  rgba(124, 77, 255, 0.28);
+        --violet: #7c4dff;
+        --violet-mid: rgba(124, 77, 255, 0.28);
         --violet-soft: rgba(124, 77, 255, 0.10);
 
         --grad-a: #ede8ff;
         --grad-b: #f4f1ff;
         --grad-c: #edf2ff;
 
-        --cat-concerts:  #6d5fd4;
-        --cat-theatres:  #b05888;
-        --cat-standup:   #a87830;
-        --cat-child:     #3a88b8;
-        --cat-clubs:     #a84868;
+        --cat-concerts: #6d5fd4;
+        --cat-theatres: #b05888;
+        --cat-standup: #a87830;
+        --cat-child: #3a88b8;
+        --cat-clubs: #a84868;
         --cat-festivals: #7c4dff;
-        --cat-other:     #2a9e8a;
+        --cat-other: #2a9e8a;
 
         --font-sans: 'DM Sans', system-ui, sans-serif;
         --font-mono: 'DM Mono', monospace;
@@ -68,6 +68,7 @@
         -webkit-backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.82);
     }
+
     .chip-active {
         background: var(--violet-soft);
         border-color: var(--violet-mid);
@@ -88,36 +89,72 @@
 }
 
 @layer utilities {
-    ::-webkit-scrollbar       { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
     ::-webkit-scrollbar-thumb {
         background: rgba(124, 77, 255, 0.22);
         border-radius: 999px;
     }
+
     ::-webkit-scrollbar-thumb:hover {
         background: rgba(124, 77, 255, 0.40);
     }
 
-    .scrollbar-none::-webkit-scrollbar { display: none; }
-    .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+    .scrollbar-none::-webkit-scrollbar {
+        display: none;
+    }
+
+    .scrollbar-none {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
 }
 
 @keyframes cardAppear {
-    from { opacity: 0; transform: translateY(18px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @keyframes emptyPulse {
-    0%, 100% { opacity: 0.5; transform: scale(1); }
-    50%      { opacity: 0.8; transform: scale(1.04); }
+    0%, 100% {
+        opacity: 0.5;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.8;
+        transform: scale(1.04);
+    }
 }
 
 @keyframes shimmer {
-    0%   { background-position: -400px 0; }
-    100% { background-position:  400px 0; }
+    0% {
+        background-position: -400px 0;
+    }
+    100% {
+        background-position: 400px 0;
+    }
 }
 
 @keyframes blink {
-    0%, 100% { opacity: 1;   transform: scale(1); }
-    50%      { opacity: 0.4; transform: scale(0.65); }
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.4;
+        transform: scale(0.65);
+    }
 }

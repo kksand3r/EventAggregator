@@ -48,15 +48,17 @@ public class ScrapingWorker : BackgroundService
         string proxyServerEnv = Environment.GetEnvironmentVariable("ProxyServer");
         string cleanProxyArg = string.Empty;
 
-        // Перевіряємо та очищуємо рядок проксі для Chromium (потрібно виділити лише host:port)
         if (!string.IsNullOrEmpty(proxyServerEnv))
         {
             try
             {
                 var proxyUri = new Uri(proxyServerEnv);
-                // Формуємо чистий аргумент проксі для Chromium, наприклад: --proxy-server=http://84.247.60.125:6095
                 cleanProxyArg = $"--proxy-server={proxyUri.Scheme}://{proxyUri.Host}:{proxyUri.Port}";
-                _logger.LogInformation("⚙️ Налаштовано проксі-сервер для Chromium: {Scheme}://{Host}:{Port}", proxyUri.Scheme, proxyUri.Host, proxyUri.Port);
+                _logger.LogInformation("⚙️ Налаштовано проксі-сервер для Chromium: {Scheme}:" +
+                                       "//" +
+                                       "" +
+                                       "{Host}:{Port}",
+                    proxyUri.Scheme, proxyUri.Host, proxyUri.Port);
             }
             catch (Exception ex)
             {

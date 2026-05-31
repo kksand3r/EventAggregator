@@ -1,11 +1,11 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
-import { fetchArchiveEvents, type EventListItem } from "@/lib/api";
+import {useEffect, useState} from "react";
+import {fetchArchiveEvents, type EventListItem} from "@/lib/api";
 import EventCard from "@/components/EventCard";
 import Pagination from "@/components/Pagination";
 import EmptyState from "@/components/EmptyState";
-import { Loader2, Archive } from "lucide-react";
+import {Loader2, Archive} from "lucide-react";
 
 export default function ArchiveTab() {
     const [events, setEvents] = useState<EventListItem[]>([]);
@@ -32,15 +32,14 @@ export default function ArchiveTab() {
 
     if (isLoading) return (
         <div className="flex justify-center py-20 flex-1 items-center">
-            <Loader2 className="h-8 w-8 animate-spin text-[#7c4dff]" />
+            <Loader2 className="h-8 w-8 animate-spin text-[#7c4dff]"/>
         </div>
     );
 
-    // 🌟 ВИПРАВЛЕННЯ: Використовуємо правильний generic стан для порожнього архіву
     if (events.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center flex-1 py-12 text-center">
-                <EmptyState type="generic" />
+                <EmptyState type="generic"/>
             </div>
         );
     }
@@ -48,14 +47,14 @@ export default function ArchiveTab() {
     return (
         <section className="w-full">
             <h2 className="text-2xl font-bold mb-7 flex items-center gap-2 text-[#1a1535]">
-                <Archive className="h-6 w-6 text-[#7c4dff]" />
+                <Archive className="h-6 w-6 text-[#7c4dff]"/>
                 Event Archive
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {events.map((event) => (
                     <div key={event.id} className="opacity-80 hover:opacity-100 transition-opacity">
-                        <EventCard event={event} />
+                        <EventCard event={event}/>
                     </div>
                 ))}
             </div>

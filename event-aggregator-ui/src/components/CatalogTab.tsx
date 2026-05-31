@@ -1,18 +1,18 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, X, MapPin, Tag, Filter } from "lucide-react";
+import {useEffect, useState} from "react";
+import {Loader2, X, MapPin, Tag, Filter} from "lucide-react";
 import EventCard from "@/components/EventCard";
 import Pagination from "@/components/Pagination";
 import EmptyState from "@/components/EmptyState";
-import { useMetadata } from "@/hooks/useMetadata";
-import { fetchEvents, type EventListItem } from "@/lib/api";
-import { formatCategory, getApiCategory } from "@/lib/categoryMapping";
-import { useEventFilters } from "@/hooks/useEventFilters";
+import {useMetadata} from "@/hooks/useMetadata";
+import {fetchEvents, type EventListItem} from "@/lib/api";
+import {formatCategory, getApiCategory} from "@/lib/categoryMapping";
+import {useEventFilters} from "@/hooks/useEventFilters";
 
 interface CatalogTabProps {
     onTotalCountChange?: (total: number) => void;
-    filters: ReturnType<typeof useEventFilters>; // ОНОВЛЕНО: Приймаємо єдиний стан фільтрів
+    filters: ReturnType<typeof useEventFilters>;
 }
 
 function formatCityName(city: string): string {
@@ -20,9 +20,8 @@ function formatCityName(city: string): string {
     return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
 }
 
-export default function CatalogTab({ onTotalCountChange, filters }: CatalogTabProps) {
-    // 🛑 ВИДЕЛЕНО: Тут більше немає локального const filters = useEventFilters();
-    const { metadata } = useMetadata();
+export default function CatalogTab({onTotalCountChange, filters}: CatalogTabProps) {
+    const {metadata} = useMetadata();
 
     const [events, setEvents] = useState<EventListItem[]>([]);
     const [loading, setLoading] = useState(false);
@@ -69,18 +68,17 @@ export default function CatalogTab({ onTotalCountChange, filters }: CatalogTabPr
         return () => {
             cancelled = true;
         };
-        // Ретельно стежимо за залежностями, щоб запит відбувався синхронно зі зміною URL
     }, [filters.selectedCategory, filters.selectedCity, filters.currentPage]);
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-wrap items-center gap-3 p-3 card-glass rounded-2xl border-white/60 shadow-sm mb-8">
+            <div
+                className="flex flex-wrap items-center gap-3 p-3 card-glass rounded-2xl border-white/60 shadow-sm mb-8">
                 <div className="flex items-center gap-2 text-violet-700 px-1">
                     <Filter className="h-4 w-4"/>
                     <span className="text-xs font-black uppercase tracking-wider">Filter:</span>
                 </div>
 
-                {/* Місто */}
                 <div className="relative min-w-[140px]">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500"/>
                     <select
@@ -97,7 +95,6 @@ export default function CatalogTab({ onTotalCountChange, filters }: CatalogTabPr
                     </select>
                 </div>
 
-                {/* Категорія */}
                 <div className="relative min-w-[160px]">
                     <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500"/>
                     <select

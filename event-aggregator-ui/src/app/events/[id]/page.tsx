@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import {useEffect, useState} from "react";
+import {useParams, useRouter} from "next/navigation";
 import Image from "next/image";
-import { Calendar, MapPin, Eye, ArrowLeft, Loader2, Ticket, Sparkles } from "lucide-react";
+import {Calendar, MapPin, Eye, ArrowLeft, Loader2, Ticket, Sparkles} from "lucide-react";
 import EventCard from "@/components/EventCard";
-import { fetchEventById, fetchEvents, incrementView, fetchEventAiSummary, type EventListItem } from "@/lib/api";
+import {fetchEventById, fetchEvents, incrementView, fetchEventAiSummary, type EventListItem} from "@/lib/api";
 
 function extractDominantColor(imageUrl: string): Promise<string> {
     return new Promise((resolve) => {
@@ -22,10 +22,15 @@ function extractDominantColor(imageUrl: string): Promise<string> {
                 const data = ctx.getImageData(0, 0, 40, 40).data;
                 let r = 0, g = 0, b = 0, count = 0;
                 for (let i = 0; i < data.length; i += 16) {
-                    r += data[i]; g += data[i + 1]; b += data[i + 2]; count++;
+                    r += data[i];
+                    g += data[i + 1];
+                    b += data[i + 2];
+                    count++;
                 }
                 resolve(`${Math.round(r / count)},${Math.round(g / count)},${Math.round(b / count)}`);
-            } catch { resolve("120,80,200"); }
+            } catch {
+                resolve("120,80,200");
+            }
         };
         img.onerror = () => resolve("120,80,200");
         img.src = imageUrl;
@@ -69,12 +74,14 @@ export default function EventDetailsPage() {
                     return;
                 }
                 setEvent(data);
-                incrementView(id).catch(() => {});
+                incrementView(id).catch(() => {
+                });
                 fetchEventAiSummary(id)
                     .then(summary => {
                         if (!cancelled) setAiSummary(summary);
                     })
-                    .catch(() => {});
+                    .catch(() => {
+                    });
             })
             .catch(() => {
                 if (!cancelled) setEvent(null);
@@ -83,11 +90,16 @@ export default function EventDetailsPage() {
                 if (!cancelled) setLoading(false);
             });
 
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+        };
     }, [id]);
 
     useEffect(() => {
-        if (!event?.image) { setColorReady(true); return; }
+        if (!event?.image) {
+            setColorReady(true);
+            return;
+        }
         setColorReady(false);
         extractDominantColor(event.image).then((color) => {
             setDominantColor(color);
@@ -101,7 +113,7 @@ export default function EventDetailsPage() {
         if (!eventId || !category) return;
 
         let cancelled = false;
-        fetchEvents({ category: category, page: 1, pageSize: 4 })
+        fetchEvents({category: category, page: 1, pageSize: 4})
             .then((res) => {
                 if (cancelled) return;
                 const list = res.data.filter(e => e.id !== eventId);
@@ -109,7 +121,9 @@ export default function EventDetailsPage() {
             })
             .catch(() => setRelated([]));
 
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+        };
     }, [event?.id, event?.category]);
 
     if (loading || event === undefined) {
@@ -123,7 +137,8 @@ export default function EventDetailsPage() {
     if (!event) {
         return (
             <div className="min-h-screen gradient-bg flex items-center justify-center p-6">
-                <div className="card-glass rounded-2xl p-8 text-center max-w-md border border-white/40 bg-white/20 backdrop-blur-md">
+                <div
+                    className="card-glass rounded-2xl p-8 text-center max-w-md border border-white/40 bg-white/20 backdrop-blur-md">
                     <p className="text-violet-900 font-extrabold text-xl mb-2">Упс! Подію не знайдено</p>
                     <p className="text-sm text-slate-600 mb-6">
                         Цей квиток або ідентифікатор події більше не є актуальним чи відсутній у базі даних.
@@ -162,7 +177,6 @@ export default function EventDetailsPage() {
                 >
                     <div className="flex flex-col md:flex-row">
 
-                        {/* Постер — фізична картка з нахилом і кольоровою тінню */}
                         <div className="flex items-center justify-center p-10 md:p-14 md:w-5/12 shrink-0">
                             <div
                                 className="relative w-full max-w-[220px] md:max-w-none aspect-[2/3] rounded-2xl overflow-hidden"
@@ -178,15 +192,16 @@ export default function EventDetailsPage() {
                                     priority
                                     unoptimized
                                 />
-                                {/* Перегляди — лівий верхній кут */}
-                                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/50 backdrop-blur-md rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white">
+
+                                <div
+                                    className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/50 backdrop-blur-md rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white">
                                     <Eye className="h-3.5 w-3.5 shrink-0"/>
                                     <span>{(event.viewCount ?? 0).toLocaleString("uk-UA")}</span>
                                 </div>
-                                {/* Категорія — смужка знизу постера */}
+                                
                                 <div
                                     className="absolute bottom-0 inset-x-0 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white text-center"
-                                    style={{ background: `rgba(${r},${g},${b},0.85)` }}
+                                    style={{background: `rgba(${r},${g},${b},0.85)`}}
                                 >
                                     {event.category || "Подія"}
                                 </div>
@@ -206,7 +221,8 @@ export default function EventDetailsPage() {
                                         </div>
                                         <div>
                                             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black mb-1">Коли</p>
-                                            <span className="text-xl font-extrabold text-slate-900">{event.date || "Дата уточнюється"}</span>
+                                            <span
+                                                className="text-xl font-extrabold text-slate-900">{event.date || "Дата уточнюється"}</span>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-5">
@@ -216,7 +232,8 @@ export default function EventDetailsPage() {
                                         </div>
                                         <div>
                                             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black mb-1">Де</p>
-                                            <span className="text-xl font-extrabold text-slate-900">{event.city || "Місто уточнюється"}</span>
+                                            <span
+                                                className="text-xl font-extrabold text-slate-900">{event.city || "Місто уточнюється"}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -226,7 +243,8 @@ export default function EventDetailsPage() {
                                     rel="noopener noreferrer"
                                     className="w-full sm:w-auto inline-flex items-center justify-center gap-4 bg-slate-950 text-white px-14 py-6 rounded-3xl font-black shadow-2xl hover:bg-violet-600 transition-all active:scale-95 text-xl group"
                                 >
-                                    <Ticket className="h-6 w-6 group-hover:rotate-12 transition-transform"/> Купити квиток
+                                    <Ticket className="h-6 w-6 group-hover:rotate-12 transition-transform"/> Купити
+                                    квиток
                                 </a>
                             </div>
                         </div>
@@ -262,7 +280,8 @@ export default function EventDetailsPage() {
                 {related.length > 0 && (
                     <section className="mt-32">
                         <div className="flex items-end justify-between mb-12 px-4">
-                            <h2 className="text-4xl font-black text-slate-950 tracking-tighter">Вам також сподобається</h2>
+                            <h2 className="text-4xl font-black text-slate-950 tracking-tighter">Вам також
+                                сподобається</h2>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-12">
                             {related.map((e) => <EventCard key={e.id} event={e}/>)}
