@@ -232,7 +232,7 @@ export default function TimelineTab() {
 
         fetchEvents({
             page: 1,
-            pageSize: 1000,
+            pageSize: 5000,
             city: selectedCity === "All" ? undefined : selectedCity,
             category: selectedCategory === "All" ? undefined : selectedCategory
         })
@@ -274,8 +274,8 @@ export default function TimelineTab() {
             let startDow = firstDay.getDay();
             startDow = startDow === 0 ? 6 : startDow - 1;
 
-            for (let i = startDow - 1; i >= 0; i--) {
-                const d = new Date(viewYear, viewMonth, -i);
+            for (let i = startDow; i > 0; i--) {
+                const d = new Date(viewYear, viewMonth, 1 - i);
                 days.push({
                     date: d, isCurrentMonth: false,
                     isToday: isSameDay(d, today),
