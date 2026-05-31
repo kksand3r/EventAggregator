@@ -237,6 +237,8 @@ export default function TimelineTab() {
             category: selectedCategory === "All" ? undefined : selectedCategory
         })
             .then(res => {
+                console.log("👉 Скільки ВСЬОГО подій прислав бекенд в масиві:", res.data.length);
+                console.log("👉 Перші 5 сирих дат від бекенду:", res.data.slice(0, 5).map(e => e.date));
                 if (!cancelled) setEvents(res.data);
             })
             .catch(console.error)

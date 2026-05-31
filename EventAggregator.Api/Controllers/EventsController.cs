@@ -199,7 +199,7 @@ namespace EventAggregator.Api.Controllers
             };
 
             if (!string.IsNullOrWhiteSpace(city) && city != "All")
-                filters.Add(f => f.Term(t => t.Field("city").Value(city.ToLowerInvariant())));
+                filters.Add(f => f.Term(t => t.Field("city.keyword").Value(city.ToLowerInvariant())));
 
             if (!string.IsNullOrWhiteSpace(category) && category != "All")
                 filters.Add(f => f.Term(t => t.Field("category.keyword").Value(category.ToLowerInvariant())));
