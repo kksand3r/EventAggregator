@@ -167,31 +167,32 @@ function CitySegments({entries, total}: { entries: [string, number][]; total: nu
         <div>
             <div
                 className="flex h-5 rounded-xl overflow-hidden gap-0.5 mb-6 border border-white shadow-inner bg-slate-200/30">
-                {entries.slice(0, 8).map(([city, count], i) => {
+                {entries.map(([city, count], i) => {
                     const pct = (count / total) * 100;
-                    const op = 0.90 - i * 0.10;
+                    const op = Math.max(0.15, 0.90 - i * 0.04);
                     return (
                         <div key={city} title={`${cityLabel(city)}: ${count}`}
                              className="hover:opacity-80 transition-opacity"
                              style={{
                                  width: `${pct}%`,
                                  background: `rgba(139,92,246,${op.toFixed(2)})`,
-                                 minWidth: pct > 1 ? undefined : 0,
+                                 minWidth: pct > 0.5 ? undefined : "2px", 
                              }}/>
                     );
                 })}
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {entries.slice(0, 8).map(([city, count], i) => {
+            
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                {entries.map(([city, count], i) => {
                     const pct = ((count / total) * 100).toFixed(0);
-                    const op = 0.90 - i * 0.10;
+                    const op = Math.max(0.15, 0.90 - i * 0.04);
                     return (
                         <div key={city}
                              className="flex items-center gap-2 p-2 rounded-lg bg-white/40 border border-white/60">
-                            <span className="w-3 h-3 rounded shadow-sm"
+                            <span className="w-3 h-3 rounded shadow-sm shrink-0"
                                   style={{background: `rgba(139,92,246,${op.toFixed(2)})`}}/>
                             <div className="flex flex-col min-w-0">
-                                <span className="text-[10px] font-black uppercase text-slate-400 leading-none mb-1">
+                                <span className="text-[10px] font-black uppercase text-slate-500 leading-none mb-1 truncate">
                                     {cityLabel(city)}
                                 </span>
                                 <span className="text-sm font-black text-violet-700 leading-none">
