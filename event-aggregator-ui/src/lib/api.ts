@@ -139,7 +139,7 @@ export async function fetchEvents(params: {
 }): Promise<{ total: number; page: number; pageSize: number; data: EventListItem[] }> {
     const base = getBaseUrl();
     const queryParams = new URLSearchParams();
-    if (params.city && params.city !== "All") queryParams.set("city", params.city);
+    if (params.city && params.city !== "All") queryParams.set("city", params.city.toLowerCase());
     if (params.category && params.category !== "All") queryParams.set("category", params.category);
     if (params.page != null) queryParams.set("page", String(params.page));
     if (params.pageSize != null) queryParams.set("pageSize", String(params.pageSize));
