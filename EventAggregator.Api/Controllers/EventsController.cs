@@ -253,15 +253,20 @@ namespace EventAggregator.Api.Controllers
         [HttpGet("stats")]
         public async Task<IActionResult> GetStats()
         {
-            var response = await _client.SearchAsync<ScrapedEvent>(s => s.Index("events").Size(0).Aggregations(a => a
-                .Add("events_by_city", ag => ag.Terms(t => t.Field("city").Size(10)))
-                .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(10)))
-            ));
+            var response = await _client.SearchAsync<ScrapedEvent>(s => s
+                .Index("events")
+                .Size(0)
+                .Aggregations(a => a
+                    .Add("events_by_city", ag => ag.Terms(t => t.Field("city").Size(50)))
+                    .Add("events_by_category", ag => ag.Terms(t => t.Field("category.keyword").Size(20)))
+                )
+            );
 
             if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
-
+            
             return Ok(new
             {
+                Total = response.Total, 
                 ByCity = response.Aggregations.GetStringTerms("events_by_city")?.Buckets
                     .ToDictionary(b => b.Key.ToString(), b => b.DocCount) ?? new(),
                 ByCategory = response.Aggregations.GetStringTerms("events_by_category")?.Buckets

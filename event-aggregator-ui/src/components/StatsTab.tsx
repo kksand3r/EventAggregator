@@ -4,6 +4,7 @@ import {useEffect, useState} from "react";
 import {Loader2, AlertCircle} from "lucide-react";
 
 interface StatsResponse {
+    total: number;
     byCity: Record<string, number>;
     byCategory: Record<string, number>;
 }
@@ -13,7 +14,7 @@ async function fetchStats(): Promise<StatsResponse> {
     const res = await fetch(`${base}/api/events/stats`);
     if (!res.ok) throw new Error(`${res.status}`);
     const j = await res.json();
-    return {byCity: j.byCity ?? {}, byCategory: j.byCategory ?? {}};
+    return {total: j.total ?? 0, byCity: j.byCity ?? {}, byCategory: j.byCategory ?? {}};
 }
 
 function cityLabel(s: string) {
@@ -268,7 +269,7 @@ export default function StatsTab() {
 
     const cities = Object.entries(stats.byCity).sort((a, b) => b[1] - a[1]);
     const cats = Object.entries(stats.byCategory).sort((a, b) => b[1] - a[1]);
-    const total = cities.reduce((s, [, v]) => s + v, 0);
+    const total = stats.total;
     const cityMax = cities[0]?.[1] ?? 1;
     const catMax = cats[0]?.[1] ?? 1;
     const donutData = cats.map(([k, v]) => ({label: catLabel(k), value: v, catKey: k}));
