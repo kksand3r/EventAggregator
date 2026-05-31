@@ -25,7 +25,7 @@ function isSameDay(a: Date, b: Date) {
 }
 
 function formatCityName(city: string): string {
-    return city.split("-").map(w => w.charAt(0) + w.slice(1).toLowerCase()).join("-");
+    return city.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join("-");
 }
 
 const CAT_DOTS: Record<string, string> = {
