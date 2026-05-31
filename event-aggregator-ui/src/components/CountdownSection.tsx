@@ -91,7 +91,7 @@ function CountdownCard({event}: { event: EventListItem }) {
             </div>
 
             <h3 className="text-[16px] font-black leading-tight text-slate-900 mb-3 line-clamp-2 h-[42px] tracking-tight">
-                «{event.title}»
+                {event.title}
             </h3>
 
             <div className="flex flex-col gap-1.5 mb-5 text-slate-500 font-bold text-[12px]">
