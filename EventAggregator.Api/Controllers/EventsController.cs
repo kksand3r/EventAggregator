@@ -253,7 +253,7 @@ namespace EventAggregator.Api.Controllers
         [HttpGet("stats")]
         public async Task<IActionResult> GetStats()
         {
-            var now = DateTime.UtcNow;
+            var now = DateTime.UtcNow.Date;
 
             var response = await _client.SearchAsync<ScrapedEvent>(s => s
                 .Index("events")
