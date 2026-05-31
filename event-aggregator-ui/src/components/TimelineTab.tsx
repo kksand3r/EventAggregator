@@ -220,7 +220,6 @@ export default function TimelineTab() {
     const [selectedCity, setSelectedCity] = useState("All");
     const [selectedCategory, setSelectedCategory] = useState("All");
     const {metadata} = useMetadata();
-
     const clearFilters = () => {
         setSelectedCity("All");
         setSelectedCategory("All");
@@ -231,19 +230,13 @@ export default function TimelineTab() {
         setLoading(true);
         setEvents([]);
 
-        const startDateTime = new Date(viewYear, viewMonth, -7);
-        const endDateTime = new Date(viewYear, viewMonth + 1, 7, 23, 59, 59);
-
         fetchEvents({
             page: 1,
-            pageSize: 600,
+            pageSize: 1000,
             city: selectedCity === "All" ? undefined : selectedCity,
-            category: selectedCategory === "All" ? undefined : selectedCategory,
-            fromDate: startDateTime.toISOString(),
-            toDate: endDateTime.toISOString()
+            category: selectedCategory === "All" ? undefined : selectedCategory
         })
             .then(res => {
-                console.log("👉 Скільки ВСЬОГО подій прислав бекенд для цього вікна:", res.data.length);
                 if (!cancelled) setEvents(res.data);
             })
             .catch(console.error)
@@ -254,11 +247,11 @@ export default function TimelineTab() {
         return () => {
             cancelled = true;
         };
-    }, [viewYear, viewMonth, selectedCity, selectedCategory]);
+    }, [selectedCity, selectedCategory]);
 
     useEffect(() => {
         setSelectedDay(null);
-    }, [selectedCity, selectedCategory, viewMonth, viewYear]);
+    }, [selectedCity, selectedCategory]);
 
     const eventsByDayMap = useMemo(() => {
         const map = new Map<string, EventListItem[]>();

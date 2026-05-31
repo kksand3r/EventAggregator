@@ -134,18 +134,13 @@ function dtoToItem(d: EventDto): EventListItem {
 export async function fetchEvents(params: {
     city?: string;
     category?: string;
-    fromDate?: string; 
-    toDate?: string; 
     page?: number;
     pageSize?: number;
 }): Promise<{ total: number; page: number; pageSize: number; data: EventListItem[] }> {
     const base = getBaseUrl();
     const queryParams = new URLSearchParams();
-
     if (params.city && params.city !== "All") queryParams.set("city", params.city);
     if (params.category && params.category !== "All") queryParams.set("category", params.category);
-    if (params.fromDate) queryParams.set("fromDate", params.fromDate);
-    if (params.toDate) queryParams.set("toDate", params.toDate);     
     if (params.page != null) queryParams.set("page", String(params.page));
     if (params.pageSize != null) queryParams.set("pageSize", String(params.pageSize));
 
