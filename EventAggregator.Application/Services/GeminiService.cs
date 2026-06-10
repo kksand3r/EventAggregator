@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
@@ -30,16 +30,11 @@ namespace EventAggregator.Application.Services
 
             var requestBody = new
             {
-                systemInstruction = new
-                {
-                    parts = new[] { new { text = systemPrompt } }
-                },
                 contents = new[]
                 {
                     new
                     {
-                        role = "user",
-                        parts = new[] { new { text = $"Подія: {title}\nОпис: {description}" } }
+                        parts = new[] { new { text = $"{systemPrompt}\n\nПодія: {title}\nОпис: {description}" } }
                     }
                 },
                 generationConfig = new { temperature = 0.4, maxOutputTokens = 150 }
