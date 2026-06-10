@@ -22,7 +22,7 @@ services:
       - event_network
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'You Know, for Search'" ]
+      test: [ "CMD-SHELL", "curl -s -u elastic:$${ELASTIC_PASSWORD} http://localhost:9200 | grep -q 'You Know, for Search'" ]
       interval: 10s
       timeout: 5s
       retries: 5
