@@ -1,10 +1,12 @@
-﻿services:
+services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
     container_name: event_aggregator_elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     command: >
       bash -c "
@@ -12,8 +14,8 @@
         bin/elasticsearch-plugin install analysis-ukrainian &&
         /bin/tini -- /usr/local/bin/docker-entrypoint.sh eswrapper
       "
-    ports:
-      - "9200:9200"
+    # ports:
+    #   - "9200:9200" # З міркувань безпеки порт закрито для зовнішнього доступу
     volumes:
       - es_data:/usr/share/elasticsearch/data
     networks:
@@ -35,10 +37,10 @@
       - GEMINI_MODEL=gemini-flash-lite-latest
       - ELASTICSEARCH_COMPATIBLE_WITH=8
       - ELASTIC_CLIENT_APIVERSIONCHECKING=false
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_URL=http://elastic:${ELASTIC_PASSWORD}@elasticsearch:9200
       - PORT=5001
-    ports:
-      - "5001:5001"
+    # ports:
+    #   - "5001:5001" # Мікросервіс доступний лише всередині Docker-мережі
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -55,6 +57,8 @@
       - "5194:8080"
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
+      - Elasticsearch__Username=elastic
+      - Elasticsearch__Password=${ELASTIC_PASSWORD}
       - ASPNETCORE_ENVIRONMENT=Production
       - Gemini__ApiKey=${GEMINI_API_KEY}
       - McpBridgeUrl=http://event-mcp-bridge:5001
@@ -74,6 +78,8 @@
     container_name: event_aggregator_collector
     environment:
       - Elasticsearch__Url=http://elasticsearch:9200
+      - Elasticsearch__Username=elastic
+      - Elasticsearch__Password=${ELASTIC_PASSWORD}
       - Gemini__ApiKey=${GEMINI_API_KEY:-""}
     depends_on:
       elasticsearch:

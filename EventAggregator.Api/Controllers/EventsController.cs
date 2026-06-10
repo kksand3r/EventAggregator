@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Elastic.Clients.Elasticsearch;
 using EventAggregator.Domain.Models;
 using EventAggregator.Api.DTOs;
@@ -6,6 +6,7 @@ using Elastic.Clients.Elasticsearch.QueryDsl;
 using EventAggregator.Application.Services;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EventAggregator.Api.Controllers
 {
@@ -24,6 +25,7 @@ namespace EventAggregator.Api.Controllers
             _mcpBridgeUrl = config["McpBridgeUrl"] ?? "http://localhost:5001";
         }
 
+        [EnableRateLimiting("AiLimiter")]
         [HttpGet("ai-search")]
         public async Task<IActionResult> AiSearch([FromQuery] string? query)
         {
@@ -168,9 +170,10 @@ namespace EventAggregator.Api.Controllers
 
             return response.IsValidResponse
                 ? Ok(response.Documents.Select(d => d.ToDto()))
-                : StatusCode(500, response.DebugInformation);
+                : StatusCode(500, new { Message = "Помилка при виконанні пошукового запиту" });
         }
 
+        [EnableRateLimiting("AiLimiter")]
         [HttpGet("{id}/ai-summary")]
         public async Task<IActionResult> GetAiSummary(string id, [FromServices] GeminiService gemini)
         {
@@ -217,7 +220,7 @@ namespace EventAggregator.Api.Controllers
                     Total = response.Total, Page = page, PageSize = pageSize,
                     Data = response.Documents.Select(d => d.ToDto())
                 })
-                : StatusCode(500, response.DebugInformation);
+                : StatusCode(500, new { Message = "Помилка при отриманні подій" });
         }
 
         [HttpGet("{id}")]
@@ -239,7 +242,7 @@ namespace EventAggregator.Api.Controllers
                 .Add("unique_categories", ag => ag.Terms(t => t.Field("category.keyword").Size(50)))
             ));
 
-            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
+            if (!response.IsValidResponse) return StatusCode(500, new { Message = "Помилка при завантаженні метаданих" });
 
             return Ok(new EventMetadataDto
             {
@@ -266,7 +269,7 @@ namespace EventAggregator.Api.Controllers
                 )
             );
 
-            if (!response.IsValidResponse) return StatusCode(500, response.DebugInformation);
+            if (!response.IsValidResponse) return StatusCode(500, new { Message = "Помилка при формуванні статистики" });
 
             return Ok(new
             {
@@ -278,6 +281,7 @@ namespace EventAggregator.Api.Controllers
             });
         }
 
+        [EnableRateLimiting("GlobalLimiter")]
         [HttpPost("{id}/view")]
         public async Task<IActionResult> IncrementView(string id)
         {
@@ -287,7 +291,7 @@ namespace EventAggregator.Api.Controllers
                     "if (ctx._source.viewsCount == null) { ctx._source.viewsCount = 1 } else { ctx._source.viewsCount += 1 }"))
             };
             var response = await _client.UpdateAsync(request);
-            return response.IsValidResponse ? Ok() : StatusCode(500, response.DebugInformation);
+            return response.IsValidResponse ? Ok() : StatusCode(500, new { Message = "Помилка оновлення переглядів" });
         }
 
         [HttpGet("archive")]
@@ -311,7 +315,7 @@ namespace EventAggregator.Api.Controllers
                     Total = response.Total, Page = page, PageSize = pageSize,
                     Data = response.Documents.Select(d => d.ToDto())
                 })
-                : StatusCode(500, response.DebugInformation);
+                : StatusCode(500, new { Message = "Помилка при отриманні архіву" });
         }
     }
 }

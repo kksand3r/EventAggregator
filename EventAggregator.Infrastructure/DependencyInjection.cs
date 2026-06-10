@@ -1,4 +1,4 @@
-﻿using Elastic.Clients.Elasticsearch;
+using Elastic.Clients.Elasticsearch;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using EventAggregator.Domain.Interfaces;
@@ -20,6 +20,13 @@ public static class DependencyInjection
 			.DefaultFieldNameInferrer(p =>
 				JsonNamingPolicy.CamelCase.ConvertName(p))
 			.DisableDirectStreaming();
+
+		var user = configuration["Elasticsearch:Username"];
+		var pass = configuration["Elasticsearch:Password"];
+		if (!string.IsNullOrEmpty(user) && !string.IsNullOrEmpty(pass))
+		{
+			settings.Authentication(new Elastic.Transport.BasicAuthentication(user, pass));
+		}
 
 		services.AddSingleton(new ElasticsearchClient(settings));
 
